@@ -5,13 +5,8 @@ from django.db import migrations
 def add_translated_values(apps, schema_editor):
     Image = apps.get_model('events', 'Image')
     for image in Image.objects.all():
-
-        if 'name_fi' in image:
-            image.name_fi = image.name
-
-        if 'alt_text_fi' in image:
-            image.alt_text_fi = image.alt_text
-            
+        image.name_fi = image.name
+        image.alt_text_fi = image.alt_text
         image.save()
 
 
