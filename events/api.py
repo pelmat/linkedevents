@@ -71,6 +71,7 @@ from events.renderers import DOCXRenderer
 
 
 def get_view_name(view):
+    logger.info("get view name 73")
     if type(view) is APIRootView:
         return getattr(settings, 'INSTANCE_NAME', 'Linked Events')
     return original_get_view_name(view)
@@ -82,6 +83,7 @@ all_views = []
 
 
 def register_view(klass, name, basename=None):
+    logger.info("def register view 84")
     entry = {'class': klass, 'name': name}
     if basename is not None:
         entry['basename'] = basename
@@ -94,6 +96,7 @@ def register_view(klass, name, basename=None):
 
 
 def get_serializer_for_model(model, version='v1'):
+    logger.info("96 get serializer model")
     Viewset = viewset_classes_by_model.get(model)
     if Viewset is None:
         return None
@@ -128,6 +131,7 @@ def parse_id_from_uri(uri):
 
 
 def perform_id_magic_for(data):
+    logger.info("id magic function 130")
     if 'id' in data:
         err = "Do not send 'id' when POSTing a new Event (got id='{}')"
         raise ParseError(err.format(data['id']))
@@ -136,6 +140,7 @@ def perform_id_magic_for(data):
 
 
 def get_authenticated_data_source_and_publisher(request):
+    logger.info("get auth data source publisher")
     # api_key takes precedence over user
     if isinstance(request.auth, ApiKeyAuth):
         data_source = request.auth.get_authenticated_data_source()
@@ -161,6 +166,7 @@ def get_authenticated_data_source_and_publisher(request):
 
 
 def get_publisher_query(publisher):
+    logger.info("def get_publisher_query(publisher):")
     """Get query for publisher (Organization)
 
     Some organizations can be replaced by a new organization.
@@ -233,6 +239,7 @@ class JSONLDRelatedField(relations.HyperlinkedRelatedField):
             return True
 
     def to_representation(self, obj):
+        logger.info("def to_representation(self, obj):")
         if isinstance(self.related_serializer, str):
             self.related_serializer = globals().get(self.related_serializer, None)
 
@@ -251,6 +258,7 @@ class JSONLDRelatedField(relations.HyperlinkedRelatedField):
         }
 
     def to_internal_value(self, value):
+        logger.info("def to_internal_value(self, value):")
         # TODO: JA If @id is missing, this will complain just about value not being JSON
         if not isinstance(value, dict) or '@id' not in value:
             raise serializers.ValidationError(self.invalid_json_error % type(value).__name__)
@@ -264,6 +272,7 @@ class JSONLDRelatedField(relations.HyperlinkedRelatedField):
         return super().to_internal_value(urllib.parse.unquote(url))
 
     def is_expanded(self):
+        logger.info("def is_expanded(self):")
         return getattr(self, 'expanded', False)
 
 
@@ -282,12 +291,14 @@ class EnumChoiceField(serializers.Field):
         super(EnumChoiceField, self).__init__(**kwargs)
 
     def to_representation(self, obj):
+        logger.info("def to_representation(self, obj): 288")
         if obj is None:
             return None
         return self.prefix + utils.get_value_from_tuple_list(self.choices,
                                                              obj, 1)
 
     def to_internal_value(self, data):
+        logger.info("ddef to_internal_value(self, data): 295")
         value = utils.get_value_from_tuple_list(self.choices,
                                                 self.prefix + str(data), 0)
         if value is None:
@@ -356,12 +367,14 @@ class TranslatedModelSerializer(serializers.ModelSerializer):
     #     return super(TranslatedModelSerializer, self).get_field(model_field)
 
     def to_representation(self, obj):
+        logger.info("def to_representation(self, obj): 364")
         ret = super(TranslatedModelSerializer, self).to_representation(obj)
         if obj is None:
             return ret
         return self.translated_fields_to_representation(obj, ret)
 
     def to_internal_value(self, data):
+        logger.info("def to_internal_value(self, data): 371")
         """
         Convert complex translated json objects to flat format.
         E.g. json structure containing `name` key like this:
@@ -765,6 +778,7 @@ class KeywordListViewSet(JSONAPIViewMixin, mixins.ListModelMixin, viewsets.Gener
     ordering = ('-data_source', '-n_events', 'name')
 
     def get_queryset(self):
+        logger.info("get query 775")
         """
         Return Keyword queryset.
 
@@ -1342,6 +1356,7 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         return data
 
     def run_extension_validations(self, data):
+        logger.info("extension validations 1353")
         for ext in self.context.get('extensions', ()):
             new_data = ext.validate_event_data(self, data)
             if new_data:
@@ -1349,6 +1364,7 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         return data
 
     def create(self, validated_data):
+        logger.info("CREATE FUNCTION 1360")
         # if id was not provided, we generate it upon creation:
         if 'id' not in validated_data:
             validated_data['id'] = generate_id(self.data_source)
@@ -1463,6 +1479,7 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         return instance
 
     def to_representation(self, obj):
+        logger.info("def to_representation(self, obj): 1476")
         ret = super(EventSerializer, self).to_representation(obj)
 
         if obj.deleted:
@@ -1521,6 +1538,7 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
 
 
 def _format_images_v0_1(data):
+    logger.info("format images. 1535")
     if 'images' not in data:
         return
     images = data.get('images')
@@ -1584,6 +1602,7 @@ def parse_duration_string(duration):
 
 
 def _filter_event_queryset(queryset, params, srs=None):
+    logger.info("filter event queryset 1599")
     """
     Filter events queryset by params
     (e.g. self.request.query_params in EventViewSet)
@@ -1959,6 +1978,7 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         return context
 
     def get_queryset(self):
+        logger.info("get queryset 1975")
         queryset = super().get_queryset()
         context = self.get_serializer_context()
         # prefetch extra if the user want them included
@@ -1977,6 +1997,7 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         )
 
     def get_object(self):
+        logger.info("GET OBJECT 1994")
         # Overridden to prevent queryset filtering from being applied
         # outside list views.
         try:
@@ -1995,6 +2016,7 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
             raise Http404("Event does not exist")
 
     def filter_queryset(self, queryset):
+        logger.info("filter queryset 2013")
         """
         TODO: convert to use proper filter framework
         """
@@ -2036,6 +2058,7 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         return False
 
     def update(self, *args, **kwargs):
+        logger.info("update function at 2055")
         response = super().update(*args, **kwargs)
         original_event = Event.objects.get(id=response.data['id'])
         if original_event.replaced_by is not None:
@@ -2045,6 +2068,7 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         return response
 
     def perform_update(self, serializer):
+        logger.info("perform update function at 2065")
         # Prevent changing an event that user does not have write permissions
         # For bulk update, the editable queryset is filtered in filter_queryset
         # method
@@ -2071,10 +2095,12 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
 
     @atomic
     def bulk_update(self, request, *args, **kwargs):
+        logger.info("bulk update atomic 2092")
         return super().bulk_update(request, *args, **kwargs)
 
     @atomic
     def create(self, request, *args, **kwargs):
+        logger.info("create atomic 2096")
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
@@ -2094,14 +2120,17 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
 
     @atomic
     def destroy(self, request, *args, **kwargs):
+        logger.info("destroy")
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
+        logger.info("destroy 2")
         if not self.request.user.can_edit_event(instance.publisher, instance.publication_status):
             raise DRFPermissionDenied()
         instance.soft_delete()
 
     def retrieve(self, request, *args, **kwargs):
+        logger.info("retreive")
         try:
             event = Event.objects.get(pk=kwargs['pk'])
         except Event.DoesNotExist:
@@ -2129,6 +2158,7 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         return super().list(request, *args, **kwargs)
 
     def finalize_response(self, request, response, *args, **kwargs):
+        logger.info("finalize response")
         # Switch to normal renderer for docx errors.
         response = super().finalize_response(request, response, *args, **kwargs)
         # Prevent rendering errors as DOCX files
@@ -2145,6 +2175,7 @@ register_view(EventViewSet, 'event')
 
 class SearchSerializer(serializers.Serializer):
     def to_representation(self, search_result):
+        logger.info("to representation searchserializer 2173")
         model = search_result.model
         version = self.context['request'].version
         ser_class = get_serializer_for_model(model, version=version)
@@ -2157,6 +2188,7 @@ class SearchSerializer(serializers.Serializer):
 
 class SearchSerializerV0_1(SearchSerializer):
     def to_representation(self, search_result):
+        logger.info("to representation searchserializerv0_1 2186")
         ret = super(SearchSerializerV0_1, self).to_representation(search_result)
         if 'resource_type' in ret:
             ret['object_type'] = ret['resource_type']
@@ -2251,7 +2283,7 @@ class SearchViewSet(JSONAPIViewMixin, GeoModelAPIView, viewsets.ViewSetMixin, ge
             queryset = queryset.models(*list(models))
 
         self.object_list = queryset.load_all()
-
+        logger.info("2281 test.")
         page = self.paginate_queryset(self.object_list)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
