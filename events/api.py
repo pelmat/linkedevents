@@ -6,7 +6,7 @@ import base64
 import re
 import struct
 import time
-import logging
+import logging as logger
 import urllib.parse
 from copy import deepcopy
 from datetime import datetime, timedelta
