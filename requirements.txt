@@ -54,7 +54,7 @@ lxml==4.5.0               # via -r requirements.in, python-docx
 markdown==3.2.1           # via -r requirements.in
 markupsafe==1.1.1         # via jinja2
 oauthlib==3.1.0           # via requests-oauthlib, social-auth-core
-pillow==7.0.0             # via -r requirements.in, easy-thumbnails
+pillow==8.1.2             # via -r requirements.in, easy-thumbnails
 psycopg2==2.8.4           # via -r requirements.in
 pyasn1==0.4.8             # via python-jose, rsa
 pycparser==2.20           # via cffi
@@ -68,12 +68,12 @@ python-jose==3.1.0        # via django-helusers
 python-social-auth==0.3.6  # via -r requirements.in
 python3-openid==3.1.0     # via django-allauth, social-auth-core
 pytz==2019.3              # via -r requirements.in, django, icalendar
-pyyaml==5.3.1             # via -r requirements.in, django-munigeo
+pyyaml==5.4             # via -r requirements.in, django-munigeo
 rdflib==4.2.2             # via -r requirements.in
 requests-cache==0.5.2     # via -r requirements.in, django-munigeo
 requests-oauthlib==1.3.0  # via django-allauth, social-auth-core
 requests==2.23.0          # via -r requirements.in, django-allauth, django-anymail, django-helusers, django-munigeo, django-orghierarchy, httmock, pyjwkest, requests-cache, requests-oauthlib, social-auth-core
-rsa==4.0                  # via python-jose
+rsa==4.7                  # via python-jose
 sentry-sdk==0.14.3        # via -r requirements.in
 six==1.14.0               # via -r requirements.in, bleach, cryptography, django-anymail, django-extensions, django-modeltranslation, django-munigeo, django-parler, ecdsa, isodate, langdetect, pyjwkest, python-dateutil, python-jose, social-auth-app-django, social-auth-core
 social-auth-app-django==3.1.0  # via -r requirements.in
