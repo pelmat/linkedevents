@@ -598,7 +598,10 @@ class LinkedEventsSerializer(TranslatedModelSerializer, MPTTModelSerializer):
                                    self.user.get_admin_organizations_and_descendants()))
                              | set(self.user.organization_memberships.all())
                              | set(map(lambda x: getattr(x, 'replaced_by'),
-                                   self.user.organization_memberships.all()))):
+                                   self.user.organization_memberships.all()))
+                             | set(self.user.public_memberships.all())
+                             | set(map(lambda x: getattr(x, 'replaced_by'),
+                                   self.user.public_memberships.all()))):
                 raise serializers.ValidationError(
                     {'publisher': _(
                         "Setting publisher to %(given)s " +
@@ -1239,6 +1242,11 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
     created_by = serializers.StringRelatedField(required=False, allow_null=True)
     last_modified_by = serializers.StringRelatedField(required=False, allow_null=True)
     is_virtualevent = serializers.BooleanField(required=False, allow_null=False)
+    is_owner = serializers.SerializerMethodField()
+    
+    def get_is_owner(self, obj):
+        request = self.context['request']
+        return obj.created_by == request.user
 
     def __init__(self, *args, skip_empties=False, **kwargs):
         super(EventSerializer, self).__init__(*args, **kwargs)
@@ -1281,10 +1289,11 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
             return data
 
         if (data['is_virtualevent'] == True):
-            self.fields_needed_to_publish = list(self.fields_needed_to_publish)
-            self.fields_needed_to_publish.remove('location')
-            self.fields_needed_to_publish.append('virtualevent_url')
-            self.fields_needed_to_publish = tuple(self.fields_needed_to_publish)
+            if 'location' in self.fields_needed_to_publish:
+                self.fields_needed_to_publish = list(self.fields_needed_to_publish)
+                self.fields_needed_to_publish.remove('location')
+                self.fields_needed_to_publish.append('virtualevent_url')
+                self.fields_needed_to_publish = tuple(self.fields_needed_to_publish)
 
         if 'super_event_type' in data:
             if data['super_event_type'] == 'recurring':
