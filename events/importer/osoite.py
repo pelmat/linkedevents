@@ -52,22 +52,24 @@ class OsoiteImporter(Importer):
             # will not be remapped by the syncher.
             self.check_deleted = lambda x: False
             self.mark_deleted = self.delete_and_replace
-
+            
     def get_street_address(self, address, language):
         # returns the address sans municipality in the desired language, or Finnish as fallback
-        street = getattr(address.street, 'name_' + language) or getattr(address.street, 'name_fi')
-        s = '%s %s' % (street, address.number)
-        if address.number_end:
-            s += '-%s' % address.number_end
-        if address.letter:
-            s += '%s' % address.letter
-        return s
+        street = getattr(address.street, 'name_' + language)
+        if street:
+            s = '%s %s' % (street, address.number)
+            if address.number_end:
+                s += '-%s' % address.number_end
+            if address.letter:
+                s += '%s' % address.letter
+            return s
 
     def get_whole_address(self, address, language):
         # returns the address plus municipality in the desired language, or Finnish as fallback
-        municipality = getattr(address.street.municipality, 'name_' + language) \
-            or getattr(address.street.municipality, 'name_fi')
-        return self.get_street_address(address, language) + ', ' + municipality
+        municipality = getattr(address.street.municipality, 'name_' + language)
+        rtn = self.get_street_address(address, language)
+        if rtn:
+            return rtn + ', ' + municipality
 
     def pk_get(self, resource_name, res_id=None):
         # support all munigeo resources, not just addresses
