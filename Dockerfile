@@ -1,4 +1,4 @@
-# Dockerfile for Kerrokantasi backend
+# Dockerfile for Linked events backend
 # Attemps to provide for both local development and server usage
 
 FROM python:3.7-buster as appbase
@@ -13,13 +13,13 @@ ENV APP_NAME linkedevents
 # This is server out by Django itself, but aided
 # by whitenoise by adding cache headers and also delegating
 # much of the work to WSGI-server
-ENV STATIC_ROOT /srv/static
+ENV STATIC_ROOT /static
 # For some reason python output buffering buffers much longer
 # while in Docker. Maybe the buffer is larger?
 ENV PYTHONUNBUFFERED True
 
 # less & netcat-openbsd are there for in-container manual debugging
-# kerrokantasi needs gdal
+# Linked events needs gdal
 RUN apt-get update && apt-get install -y postgresql-client less netcat-openbsd gettext locales gdal-bin python-gdal python3-gdal
 
 # we need the Finnish locale built
@@ -43,7 +43,7 @@ COPY . .
 
 # Statics are kept inside container image for serving using whitenoise
 ENV DEBUG=True
-RUN mkdir -p /srv/static && python manage.py collectstatic
+RUN mkdir -p /static && python manage.py collectstatic
 
 # Keep media in its own directory outside home, in case home
 # directory forms some sort of attack route
