@@ -50,6 +50,7 @@ RUN mkdir -p /static && python manage.py collectstatic
 # Usually this would be some sort of volume
 # RUN mkdir -p /srv/media && chown hauki:hauki /srv/media
 
+RUN chmod +x entrypoint.sh
 ENTRYPOINT ["deploy/entrypoint.sh"]
 
 # Both production and dev servers listen on port 8000
