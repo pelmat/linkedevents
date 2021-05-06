@@ -6,7 +6,7 @@
 #################################################
 # Whitelisted folders
 #################################################
-!docker*
+!deploy*
 !events*
 !extension_course*
 !helcourses*
@@ -14,6 +14,7 @@
 !linkedevents*
 !locale*
 !multilingual_haystack*
+!notifications*
 !templates*
 
 #################################################
