@@ -34,7 +34,7 @@ django-orghierarchy-turku==0.1.27  # via -r requirements.in
 django-parler-rest==2.1   # via django-munigeo
 django-parler==2.0.1      # via django-munigeo, django-parler-rest
 django-reversion==3.0.7   # via -r requirements.in
-django==2.2.20            # via -r requirements.in, django-allauth, django-anymail, django-appconf, django-cors-headers, django-filter, django-haystack, django-helusers, django-jinja, django-leaflet, django-modeltranslation, django-mptt, django-munigeo, django-reversion, djangorestframework, djangorestframework-bulk, drf-oidc-auth, easy-thumbnails
+django==2.2.22            # via -r requirements.in, django-allauth, django-anymail, django-appconf, django-cors-headers, django-filter, django-haystack, django-helusers, django-jinja, django-leaflet, django-modeltranslation, django-mptt, django-munigeo, django-reversion, djangorestframework, djangorestframework-bulk, drf-oidc-auth, easy-thumbnails
 djangorestframework-bulk==0.2.1  # via -r requirements.in
 djangorestframework-gis==0.15  # via -r requirements.in
 djangorestframework-jwt==1.11.0  # via -r requirements.in
