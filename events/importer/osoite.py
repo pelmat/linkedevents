@@ -131,13 +131,16 @@ class OsoiteImporter(Importer):
         self._save_translated_field(obj, 'address_locality', info, 'municipality')
 
         position = address_obj.location
-
+        #print("[OSOITE.PY]: ---> POSITION: ", position)
+        #position = None
+        obj._changed = True
         if position and obj.position:
             # If the distance is less than 10cm, assume the location
             # hasn't changed.
             assert obj.position.srid == settings.PROJECTION_SRID
             if position.distance(obj.position) < 0.10:
                 position = obj.position
+                #position = None
         if position != obj.position:
             obj._changed = True
             obj._changed_fields.append('position')
