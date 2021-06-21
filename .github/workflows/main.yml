@@ -41,8 +41,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install gettext python-dev libpq-dev gdal-bin -y
-          psql -h localhost -U linkedevents -d respa -c "create extension postgis;"
-          psql -h localhost -U linkedevents -d respa -c "create extension hstore;"
+          psql -h localhost -U linkedevents -d linkedevents -c "create extension postgis;"
+          psql -h localhost -U linkedevents -d linkedevents -c "create extension hstore;"
         env:
           PGPASSWORD: linkedevents
       - name: Install requirements
