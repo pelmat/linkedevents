@@ -66,4 +66,4 @@ jobs:
           DEBUG: true
           SECRET_KEY: le_secret
         run: |
-          pytest --cov . --doctest-modules
+          pytest
