@@ -1,51 +1,31 @@
-version: "3.7"
+version: "turku-1.1"
 
 services:
-    postgis:
-        image: "postgis/postgis:12-2.5-alpine"
+    db:
+        container_name: linkedevents-db
+        build: ./docker/postgres/
+        restart: always
         environment:
             POSTGRES_USER: linkedevents
             POSTGRES_PASSWORD: linkedevents
             POSTGRES_DB: linkedevents
-        ports:
-            - "127.0.0.1:5555:5432"
         volumes:
-            - postgres-data-volume:/var/lib/postgresql/data
-
-    dev:
-        image: linkedevents_dev
-        depends_on:
-            - postgis
+            - db_data:/var/lib/postgresql
+    api:
+        container_name: linkedevents-api
         build:
             context: ./
             dockerfile: ./Dockerfile
-            target: development
+        command: bash -c 'tail -f /dev/null'
+        volumes:
+            - .:/usr/src/app
         environment:
-            - DEBUG=true
-            - DATABASE_URL=postgis://linkedevents:linkedevents@postgis/linkedevents
-            - WAIT_FOR_IT_ADDRESS=postgis:5432
-        # Uncomment this if you want to configure development instance with the external file
-        # env_file:
-        #     - config_dev.toml
-        volumes:
-            - .:/linkedevents:cached
-            - $HOME/maintenance:/maintenance
-            - $HOME/linkedevents_logs:/logs
-        command: ["start_django_development_server"]
+            - DEBUG=1
+            - DATABASE_URL=postgis://linkedevents:linkedevents@db/linkedevents
         ports:
-            - "127.0.0.1:8000:8000"
-
-    deploy:
-        image: linkedevents
-        build:
-            context: ./
-            dockerfile: ./Dockerfile
-            target: production
-        command: "e echo Not running deploy image from compose"
+            - "8000:8000"
+        depends_on:
+            - db
 
 volumes:
-    postgres-data-volume:
-
-networks:
-    default:
-        name: turku
+    db_data:
