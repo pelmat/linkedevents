@@ -1,22 +1,30 @@
-version: "turku-1.1"
+version: "3.7"
 
 services:
     db:
-        container_name: linkedevents-db
+        image: postgis:10
+        container_name: db
         build: ./docker/postgres/
         restart: always
         environment:
-            POSTGRES_USER: linkedevents
-            POSTGRES_PASSWORD: linkedevents
-            POSTGRES_DB: linkedevents
+            - "POSTGRES_HOST_AUTH_METHOD=trust"
+        POSTGRES_USER: linkedevents
+        POSTGRES_PASSWORD: linkedevents
+        POSTGRES_DB: linkedevents
+
         volumes:
             - db_data:/var/lib/postgresql
+        networks:
+            - django
+        ports:
+            - "5432:5432"
+
     api:
         container_name: linkedevents-api
         build:
             context: ./
             dockerfile: ./Dockerfile
-        command: bash -c 'tail -f /dev/null'
+        command: bash -c "python manage.py migrate
         volumes:
             - .:/usr/src/app
         environment:
@@ -26,6 +34,12 @@ services:
             - "8000:8000"
         depends_on:
             - db
+        networks:
+            - django
 
 volumes:
     db_data:
+
+networks:
+    django:
+        driver: bridge

@@ -63,9 +63,9 @@ env = environ.Env(
     MAIL_MAILGUN_API=(str, ''),
     LIPPUPISTE_EVENT_API_URL=(str, None),
 
-    OIDC_AUDIENCE=(str,''),
+    OIDC_AUDIENCE=(str, ''),
     OIDC_SECRET=(str, ''),
-    OIDC_API_SCOPE_PREFIX=(str,''),
+    OIDC_API_SCOPE_PREFIX=(str, ''),
     OIDC_API_AUTHORIZATION_FIELD=(str, ''),
     OIDC_REQUIRE_API_SCOPE_FOR_AUTHENTICATION=(bool, False),
     OIDC_ISSUER=(str, ''),
@@ -94,7 +94,14 @@ ADMINS = env('ADMINS')
 INTERNAL_IPS = env('INTERNAL_IPS',
                    default=(['127.0.0.1'] if DEBUG else []))
 DATABASES = {
-    'default': env.db()
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'linkedevents',
+        'USER': 'linkedevents',
+        'PASSWORD': 'linkedevents',
+        'HOST': 'db',
+        'PORT': 5432,
+    }
 }
 
 SYSTEM_DATA_SOURCE_ID = env('SYSTEM_DATA_SOURCE_ID')
@@ -323,7 +330,7 @@ CORS_ORIGIN_ALLOW_ALL = True
 CSRF_COOKIE_NAME = '%s-csrftoken' % env('COOKIE_PREFIX')
 SESSION_COOKIE_NAME = '%s-sessionid' % env('COOKIE_PREFIX')
 
-from django_jinja.builtins import DEFAULT_EXTENSIONS # noqa
+from django_jinja.builtins import DEFAULT_EXTENSIONS  # noqa
 
 TEMPLATES = [
     {
@@ -382,45 +389,45 @@ LIPPUPISTE_EVENT_API_URL = env('LIPPUPISTE_EVENT_API_URL')
 def haystack_connection_for_lang(language_code):
     if language_code == "fi":
         return {'default-fi': {
-                    'ENGINE': 'multilingual_haystack.backends.LanguageSearchEngine',
-                    'BASE_ENGINE': 'events.custom_elasticsearch_search_backend.CustomEsSearchEngine',
-                    'URL': env('ELASTICSEARCH_URL'),
-                    'INDEX_NAME': 'linkedevents-fi',
-                    'MAPPINGS': CUSTOM_MAPPINGS,
-                    'SETTINGS': {
-                        "analysis": {
-                            "analyzer": {
-                                "default": {
-                                    "tokenizer": "finnish",
-                                    "filter": ["lowercase", "voikko_filter"]
-                                }
-                            },
-                            "filter": {
-                                "voikko_filter": {
-                                    "type": "voikko",
-                                }
-                            }
+            'ENGINE': 'multilingual_haystack.backends.LanguageSearchEngine',
+            'BASE_ENGINE': 'events.custom_elasticsearch_search_backend.CustomEsSearchEngine',
+            'URL': env('ELASTICSEARCH_URL'),
+            'INDEX_NAME': 'linkedevents-fi',
+            'MAPPINGS': CUSTOM_MAPPINGS,
+            'SETTINGS': {
+                "analysis": {
+                    "analyzer": {
+                        "default": {
+                            "tokenizer": "finnish",
+                            "filter": ["lowercase", "voikko_filter"]
+                        }
+                    },
+                    "filter": {
+                        "voikko_filter": {
+                            "type": "voikko",
                         }
                     }
-                },
                 }
+            }
+        },
+        }
     else:
         return {f'default-{language_code}': {
-                    'ENGINE': 'multilingual_haystack.backends.LanguageSearchEngine',
-                    'BASE_ENGINE': 'events.custom_elasticsearch_search_backend.CustomEsSearchEngine',
-                    'URL': env('ELASTICSEARCH_URL'),
-                    'INDEX_NAME': f'linkedevents-{language_code}',
-                    'MAPPINGS': CUSTOM_MAPPINGS,
-                    }
-                }
+            'ENGINE': 'multilingual_haystack.backends.LanguageSearchEngine',
+            'BASE_ENGINE': 'events.custom_elasticsearch_search_backend.CustomEsSearchEngine',
+            'URL': env('ELASTICSEARCH_URL'),
+            'INDEX_NAME': f'linkedevents-{language_code}',
+            'MAPPINGS': CUSTOM_MAPPINGS,
+        }
+        }
 
 
 def dummy_haystack_connection_for_lang(language_code):
     return {f'default-{language_code}': {
-                'ENGINE': 'multilingual_haystack.backends.LanguageSearchEngine',
-                'BASE_ENGINE': 'haystack.backends.simple_backend.SimpleEngine'
-                }
-            }
+        'ENGINE': 'multilingual_haystack.backends.LanguageSearchEngine',
+        'BASE_ENGINE': 'haystack.backends.simple_backend.SimpleEngine'
+    }
+    }
 
 
 HAYSTACK_SIGNAL_PROCESSOR = 'haystack.signals.RealtimeSignalProcessor'

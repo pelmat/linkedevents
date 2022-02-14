@@ -55,17 +55,3 @@ ENTRYPOINT ["deploy/entrypoint.sh"]
 
 # Both production and dev servers listen on port 8000
 EXPOSE 8000
-
-# Next, the development & testing extras
-FROM appbase as development
-
-RUN pip install --no-cache-dir -r requirements-dev.txt
-
-USER linkedevents
-
-# And the production image
-FROM appbase as production
-
-ENV DEBUG=False
-
-USER linkedevents
