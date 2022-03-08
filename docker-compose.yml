@@ -1,45 +1,27 @@
-version: "3.7"
-
 services:
-    db:
-        image: postgis:10
-        container_name: db
-        build: ./docker/postgres/
-        restart: always
-        environment:
-            - "POSTGRES_HOST_AUTH_METHOD=trust"
-        POSTGRES_USER: linkedevents
-        POSTGRES_PASSWORD: linkedevents
-        POSTGRES_DB: linkedevents
+  api:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    environment:
+      DATABASE_URL: postgis://linkedevents:linkedevents@db:5432/linkedevents
+    ports:
+      - 8000:8000
+    depends_on:
+      - db
 
-        volumes:
-            - db_data:/var/lib/postgresql
-        networks:
-            - django
-        ports:
-            - "5432:5432"
-
-    api:
-        container_name: linkedevents-api
-        build:
-            context: ./
-            dockerfile: ./Dockerfile
-        command: bash -c "python manage.py migrate
-        volumes:
-            - .:/usr/src/app
-        environment:
-            - DEBUG=1
-            - DATABASE_URL=postgis://linkedevents:linkedevents@db/linkedevents
-        ports:
-            - "8000:8000"
-        depends_on:
-            - db
-        networks:
-            - django
+  db:
+    build:
+      context: .
+      dockerfile: ./docker/postgres/Dockerfile
+    environment:
+      - POSTGRES_USER=linkedevents
+      - POSTGRES_PASSWORD=linkedevents
+      - POSTGRES_DB=linkedevents
+    volumes:
+      - db_linked_data:/var/lib/postgresql
+    ports:
+      - "5432:5432"
 
 volumes:
-    db_data:
-
-networks:
-    django:
-        driver: bridge
+  db_linked_data:

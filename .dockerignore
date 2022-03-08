@@ -7,6 +7,7 @@
 # Whitelisted folders
 #################################################
 !deploy*
+!docker*
 !events*
 !extension_course*
 !helcourses*

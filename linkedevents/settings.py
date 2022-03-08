@@ -94,14 +94,7 @@ ADMINS = env('ADMINS')
 INTERNAL_IPS = env('INTERNAL_IPS',
                    default=(['127.0.0.1'] if DEBUG else []))
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'linkedevents',
-        'USER': 'linkedevents',
-        'PASSWORD': 'linkedevents',
-        'HOST': 'db',
-        'PORT': 5432,
-    }
+    'default': env.db()
 }
 
 SYSTEM_DATA_SOURCE_ID = env('SYSTEM_DATA_SOURCE_ID')
