@@ -73,7 +73,8 @@ class DataSource(models.Model):
     owner = models.ForeignKey(
         'django_orghierarchy.Organization', on_delete=models.SET_NULL,
         related_name='owned_systems', null=True, blank=True)
-    user_editable = models.BooleanField(default=False, verbose_name=_('Objects may be edited by users'))
+    user_editable = models.BooleanField(
+        default=False, verbose_name=_('Objects may be edited by users'))
 
     def __str__(self):
         return self.id
@@ -86,11 +87,13 @@ class SimpleValueMixin(object):
     of their related object. These models have no existence
     outside their related object.
     """
+
     def value_fields(self):
         return []
 
     def simple_value(self):
-        field_names = translation_utils.expand_model_fields(self, self.value_fields())
+        field_names = translation_utils.expand_model_fields(
+            self, self.value_fields())
         return tuple((f, getattr(self, f)) for f in field_names)
 
     def value_equals(self, other):
@@ -150,7 +153,8 @@ class Image(models.Model):
     objects = BaseQuerySet.as_manager()
 
     # Properties from schema.org/Thing
-    name = models.CharField(verbose_name=_('Name'), max_length=255, db_index=True, blank=True, null=True)
+    name = models.CharField(verbose_name=_(
+        'Name'), max_length=255, db_index=True, blank=True, null=True)
 
     data_source = models.ForeignKey(
         DataSource, on_delete=models.CASCADE, related_name='provided_%(class)s_data', db_index=True, null=True)
@@ -166,13 +170,16 @@ class Image(models.Model):
         User, on_delete=models.SET_NULL, related_name='EventImage_last_modified_by', null=True, blank=True)
 
     image = models.ImageField(upload_to='images', null=True, blank=True)
-    url = models.URLField(verbose_name=_('Image'), max_length=400, null=True, blank=True)
+    url = models.URLField(verbose_name=_('Image'),
+                          max_length=400, null=True, blank=True)
     cropping = ImageRatioField('image', '800x800', verbose_name=_('Cropping'))
     license = models.ForeignKey(
         License, on_delete=models.SET_NULL, verbose_name=_('License'), related_name='images', default='cc_by',
         null=True)
-    photographer_name = models.CharField(verbose_name=_('Photographer name'), max_length=255, null=True, blank=True)
-    alt_text = models.CharField(verbose_name=_('Alt text'), max_length=320, null=True, blank=True)
+    photographer_name = models.CharField(verbose_name=_(
+        'Photographer name'), max_length=255, null=True, blank=True)
+    alt_text = models.CharField(verbose_name=_(
+        'Alt text'), max_length=320, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.publisher:
@@ -184,7 +191,8 @@ class Image(models.Model):
         if not self.url and not self.image:
             raise ValidationError(_('You must provide either image or url.'))
         if self.url and self.image:
-            raise ValidationError(_('You can only provide image or url, not both.'))
+            raise ValidationError(
+                _('You can only provide image or url, not both.'))
         self.last_modified_time = BaseModel.now()
         super(Image, self).save(*args, **kwargs)
 
@@ -218,13 +226,16 @@ class BaseModel(models.Model):
         DataSource, on_delete=models.CASCADE, related_name='provided_%(class)s_data', db_index=True)
 
     # Properties from schema.org/Thing
-    name = models.CharField(verbose_name=_('Name'), max_length=255, db_index=True)
+    name = models.CharField(verbose_name=_(
+        'Name'), max_length=255, db_index=True)
 
     origin_id = models.CharField(verbose_name=_('Origin ID'), max_length=100, db_index=True, null=True,
                                  blank=True)
 
-    created_time = models.DateTimeField(null=True, blank=True, auto_now_add=True)
-    last_modified_time = models.DateTimeField(null=True, blank=True, auto_now=True, db_index=True)
+    created_time = models.DateTimeField(
+        null=True, blank=True, auto_now_add=True)
+    last_modified_time = models.DateTimeField(
+        null=True, blank=True, auto_now=True, db_index=True)
 
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
@@ -263,8 +274,10 @@ class Language(models.Model):
 
 
 class KeywordLabel(models.Model):
-    name = models.CharField(verbose_name=_('Name'), max_length=255, db_index=True)
-    language = models.ForeignKey(Language, on_delete=models.CASCADE, blank=False, null=False)
+    name = models.CharField(verbose_name=_(
+        'Name'), max_length=255, db_index=True)
+    language = models.ForeignKey(
+        Language, on_delete=models.CASCADE, blank=False, null=False)
 
     def __str__(self):
         return self.name + ' (' + str(self.language) + ')'
@@ -274,11 +287,22 @@ class KeywordLabel(models.Model):
 
 
 class Keyword(BaseModel, ImageMixin, ReplacedByMixin):
+
+    class Ontology_type:
+        CONCEPT = 1
+        HIERARCHY = 2
+
+    ONTOLOGY_TYPES = (
+        (Ontology_type.CONCEPT, "OntologyConcept"),
+        (Ontology_type.HIERARCHY, "OntologyHierarchy"),
+    )
+
     publisher = models.ForeignKey(
         'django_orghierarchy.Organization', on_delete=models.CASCADE, verbose_name=_('Publisher'),
         db_index=True, null=True, blank=True,
         related_name='Published_keywords')
-    alt_labels = models.ManyToManyField(KeywordLabel, blank=True, related_name='keywords')
+    alt_labels = models.ManyToManyField(
+        KeywordLabel, blank=True, related_name='keywords')
     aggregate = models.BooleanField(default=False)
     deprecated = models.BooleanField(default=False, db_index=True)
     n_events = models.IntegerField(
@@ -288,11 +312,22 @@ class Keyword(BaseModel, ImageMixin, ReplacedByMixin):
         editable=False,
         db_index=True
     )
+    ontology_type = models.SmallIntegerField(verbose_name=_('Ontology type'),
+                                             default=Ontology_type.CONCEPT, choices=ONTOLOGY_TYPES)
+    parents = models.ManyToManyField(
+        "self", blank=True, symmetrical=False, related_name='keyword-parents+')
+    children = models.ManyToManyField(
+        "self", blank=True, symmetrical=False, related_name='keyword-children+')
     n_events_changed = models.BooleanField(default=False, db_index=True)
     replaced_by = models.ForeignKey(
         'Keyword', on_delete=models.SET_NULL, related_name='aliases', null=True, blank=True)
 
     schema_org_type = "Thing/LinkedEventKeyword"
+    is_hidden = models.BooleanField(
+        default=False,
+        verbose_name=_('Is hidden'),
+        help_text=_('Is this keyword excluded from keyword list and set searches')
+    )
 
     def __str__(self):
         return self.name
@@ -316,7 +351,8 @@ class Keyword(BaseModel, ImageMixin, ReplacedByMixin):
 
         if self.replaced_by and not self.deprecated:
             self.deprecated = True
-            logger.warning("Keyword replaced without deprecating. Deprecating automatically", extra={'keyword': self})
+            logger.warning("Keyword replaced without deprecating. Deprecating automatically", extra={
+                           'keyword': self})
 
         old_replaced_by = None
         if self.id:
@@ -366,14 +402,17 @@ class KeywordSet(BaseModel, ImageMixin):
         (KEYWORD, "keyword"),
         (AUDIENCE, "audience"),
     )
-    usage = models.SmallIntegerField(verbose_name=_('Intended keyword usage'), choices=USAGES, default=ANY)
+    usage = models.SmallIntegerField(verbose_name=_(
+        'Intended keyword usage'), choices=USAGES, default=ANY)
     organization = models.ForeignKey('django_orghierarchy.Organization', on_delete=models.CASCADE,
                                      verbose_name=_('Organization which uses this set'), null=True)
-    keywords = models.ManyToManyField(Keyword, blank=False, related_name='sets')
+    keywords = models.ManyToManyField(
+        Keyword, blank=False, related_name='sets')
 
     def save(self, *args, **kwargs):
         if any([keyword.deprecated for keyword in self.keywords.all()]):
-            raise ValidationError(_("KeywordSet can't have deprecated keywords"))
+            raise ValidationError(
+                _("KeywordSet can't have deprecated keywords"))
         super().save(*args, **kwargs)
 
 
@@ -383,8 +422,10 @@ class Place(MPTTModel, BaseModel, SchemalessFieldMixin, ImageMixin, ReplacedByMi
 
     publisher = models.ForeignKey(
         'django_orghierarchy.Organization', on_delete=models.CASCADE, verbose_name=_('Publisher'), db_index=True)
-    info_url = models.URLField(verbose_name=_('Place home page'), null=True, blank=True, max_length=1000)
-    description = models.TextField(verbose_name=_('Description'), null=True, blank=True)
+    info_url = models.URLField(verbose_name=_(
+        'Place home page'), null=True, blank=True, max_length=1000)
+    description = models.TextField(verbose_name=_(
+        'Description'), null=True, blank=True)
     parent = TreeForeignKey('self', on_delete=models.CASCADE, null=True, blank=True,
                             related_name='children')
 
@@ -392,18 +433,26 @@ class Place(MPTTModel, BaseModel, SchemalessFieldMixin, ImageMixin, ReplacedByMi
                                  blank=True)
 
     email = models.EmailField(verbose_name=_('E-mail'), null=True, blank=True)
-    telephone = models.CharField(verbose_name=_('Telephone'), max_length=128, null=True, blank=True)
-    contact_type = models.CharField(verbose_name=_('Contact type'), max_length=255, null=True, blank=True)
-    street_address = models.CharField(verbose_name=_('Street address'), max_length=255, null=True, blank=True)
-    address_locality = models.CharField(verbose_name=_('Address locality'), max_length=255, null=True, blank=True)
-    address_region = models.CharField(verbose_name=_('Address region'), max_length=255, null=True, blank=True)
-    postal_code = models.CharField(verbose_name=_('Postal code'), max_length=128, null=True, blank=True)
+    telephone = models.CharField(verbose_name=_(
+        'Telephone'), max_length=128, null=True, blank=True)
+    contact_type = models.CharField(verbose_name=_(
+        'Contact type'), max_length=255, null=True, blank=True)
+    street_address = models.CharField(verbose_name=_(
+        'Street address'), max_length=255, null=True, blank=True)
+    address_locality = models.CharField(verbose_name=_(
+        'Address locality'), max_length=255, null=True, blank=True)
+    address_region = models.CharField(verbose_name=_(
+        'Address region'), max_length=255, null=True, blank=True)
+    postal_code = models.CharField(verbose_name=_(
+        'Postal code'), max_length=128, null=True, blank=True)
     post_office_box_num = models.CharField(verbose_name=_('PO BOX'), max_length=128, null=True,
                                            blank=True)
-    address_country = models.CharField(verbose_name=_('Country'), max_length=2, null=True, blank=True)
+    address_country = models.CharField(verbose_name=_(
+        'Country'), max_length=2, null=True, blank=True)
 
     deleted = models.BooleanField(verbose_name=_('Deleted'), default=False)
-    replaced_by = models.ForeignKey('Place', on_delete=models.SET_NULL, related_name='aliases', null=True, blank=True)
+    replaced_by = models.ForeignKey(
+        'Place', on_delete=models.SET_NULL, related_name='aliases', null=True, blank=True)
     divisions = models.ManyToManyField(AdministrativeDivision, verbose_name=_('Divisions'), related_name='places',
                                        blank=True)
     n_events = models.IntegerField(
@@ -435,7 +484,8 @@ class Place(MPTTModel, BaseModel, SchemalessFieldMixin, ImageMixin, ReplacedByMi
 
         if self.replaced_by and not self.deleted:
             self.deleted = True
-            logger.warning("Place replaced without soft deleting. Soft deleting automatically", extra={'place': self})
+            logger.warning(
+                "Place replaced without soft deleting. Soft deleting automatically", extra={'place': self})
 
         # needed to remap events to replaced location
         old_replaced_by = None
@@ -449,15 +499,19 @@ class Place(MPTTModel, BaseModel, SchemalessFieldMixin, ImageMixin, ReplacedByMi
 
         # needed to remap events to replaced location
         if not old_replaced_by == self.replaced_by:
-            Event.objects.filter(location=self).update(location=self.replaced_by)
+            Event.objects.filter(location=self).update(
+                location=self.replaced_by)
             # Update doesn't call save so we update event numbers manually.
             # Not all of the below are necessarily present.
-            ids_to_update = [event.id for event in (self, self.replaced_by, old_replaced_by) if event]
-            Place.objects.filter(id__in=ids_to_update).update(n_events_changed=True)
+            ids_to_update = [event.id for event in (
+                self, self.replaced_by, old_replaced_by) if event]
+            Place.objects.filter(id__in=ids_to_update).update(
+                n_events_changed=True)
 
         if self.position:
             self.divisions.set(AdministrativeDivision.objects.filter(
-                type__type__in=('district', 'sub_district', 'neighborhood', 'muni'),
+                type__type__in=('district', 'sub_district',
+                                'neighborhood', 'muni'),
                 geometry__boundary__contains=self.position))
         else:
             self.divisions.clear()
@@ -508,6 +562,19 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
         (Status.RESCHEDULED, "EventRescheduled"),
     )
 
+    class Type_Id:
+        GENERAL = 1
+        COURSE = 2
+        VOLUNTEERING = 3
+        HOBBIES = 4
+
+    TYPE_IDS = (
+        (Type_Id.GENERAL, _("General")),
+        (Type_Id.COURSE, _("Course")),
+        (Type_Id.VOLUNTEERING, _("Volunteering")),
+        (Type_Id.HOBBIES, _("Hobbies")),
+    )
+
     class SuperEventType:
         RECURRING = 'recurring'
         UMBRELLA = 'umbrella'
@@ -527,12 +594,16 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
     )
 
     # Properties from schema.org/Thing
-    info_url = models.URLField(verbose_name=_('Event home page'), blank=True, null=True, max_length=1000)
-    description = models.TextField(verbose_name=_('Description'), blank=True, null=True)
-    short_description = models.TextField(verbose_name=_('Short description'), blank=True, null=True)
+    info_url = models.URLField(verbose_name=_(
+        'Event home page'), blank=True, null=True, max_length=1000)
+    description = models.TextField(verbose_name=_(
+        'Description'), blank=True, null=True)
+    short_description = models.TextField(verbose_name=_(
+        'Short description'), blank=True, null=True)
 
     # Properties from schema.org/CreativeWork
-    date_published = models.DateTimeField(verbose_name=_('Date published'), null=True, blank=True)
+    date_published = models.DateTimeField(
+        verbose_name=_('Date published'), null=True, blank=True)
     # headline and secondary_headline are for cases where
     # the original event data contains a title and a subtitle - in that
     # case the name field is combined from these.
@@ -540,10 +611,12 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
     # secondary_headline is mapped to schema.org alternative_headline
     # and is used for subtitles, that is for
     # secondary, complementary headlines, not "alternative" headlines
-    headline = models.CharField(verbose_name=_('Headline'), max_length=255, null=True, db_index=True)
+    headline = models.CharField(verbose_name=_(
+        'Headline'), max_length=255, null=True, db_index=True)
     secondary_headline = models.CharField(verbose_name=_('Secondary headline'), max_length=255,
                                           null=True, db_index=True)
-    provider = models.CharField(verbose_name=_('Provider'), max_length=512, null=True)
+    provider = models.CharField(verbose_name=_(
+        'Provider'), max_length=512, null=True)
     provider_contact_info = models.CharField(verbose_name=_("Provider's contact info"),
                                              max_length=255, null=True, blank=True)
     publisher = models.ForeignKey('django_orghierarchy.Organization', verbose_name=_('Publisher'), db_index=True,
@@ -560,43 +633,68 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
         verbose_name=_('Event data publication status'), choices=PUBLICATION_STATUSES,
         default=PublicationStatus.PUBLIC)
 
-    location = models.ForeignKey(Place, related_name='events', null=True, blank=True, on_delete=models.PROTECT)
+    location = models.ForeignKey(
+        Place, related_name='events', null=True, blank=True, on_delete=models.PROTECT)
     location_extra_info = models.CharField(verbose_name=_('Location extra info'),
                                            max_length=400, null=True, blank=True)
 
-    start_time = models.DateTimeField(verbose_name=_('Start time'), null=True, db_index=True, blank=True)
-    end_time = models.DateTimeField(verbose_name=_('End time'), null=True, db_index=True, blank=True)
+    start_time = models.DateTimeField(verbose_name=_(
+        'Start time'), null=True, db_index=True, blank=True)
+    end_time = models.DateTimeField(verbose_name=_(
+        'End time'), null=True, db_index=True, blank=True)
     has_start_time = models.BooleanField(default=True)
     has_end_time = models.BooleanField(default=True)
 
-    audience_min_age = models.SmallIntegerField(verbose_name=_('Minimum recommended age'),
-                                                blank=True, null=True, db_index=True)
-    audience_max_age = models.SmallIntegerField(verbose_name=_('Maximum recommended age'),
-                                                blank=True, null=True, db_index=True)
+    audience_min_age = models.PositiveSmallIntegerField(verbose_name=_('Minimum recommended age'),
+                                                        blank=True, null=True, db_index=True)
+    audience_max_age = models.PositiveSmallIntegerField(verbose_name=_('Maximum recommended age'),
+                                                        blank=True, null=True, db_index=True)
+
+    maximum_attendee_capacity = models.PositiveSmallIntegerField(
+        verbose_name=_('maximum attendee capacity'), null=True, blank=True)
+
+    minimum_attendee_capacity = models.PositiveSmallIntegerField(
+        verbose_name=_('minimum attendee capacity'), null=True, blank=True)
+
+    enrolment_start_time = models.DateTimeField(
+        verbose_name=_('enrolment start time'), null=True, blank=True)
+
+    enrolment_end_time = models.DateTimeField(
+        verbose_name=_('enrolment end time'), null=True, blank=True)
+
+    enrolment_url = models.URLField(verbose_name=_(
+        'Enrolment URL'), blank=True, null=True)
 
     super_event = TreeForeignKey('self', null=True, blank=True,
                                  on_delete=models.SET_NULL, related_name='sub_events')
 
+    type_id = models.SmallIntegerField(blank=False, null=False, db_index=False,
+                                       default=Type_Id.GENERAL, choices=TYPE_IDS)
+
     super_event_type = models.CharField(max_length=255, blank=True, null=True, db_index=True,
                                         default=None, choices=SUPER_EVENT_TYPES)
 
-    sub_event_type = models.CharField(max_length=255, blank=True, null=True, db_index=True, 
-                                        default=None, choices=SUB_EVENT_TYPES)
+    sub_event_type = models.CharField(max_length=255, blank=True, null=True,
+                                      db_index=True, default=None, choices=SUB_EVENT_TYPES)
 
-    in_language = models.ManyToManyField(Language, verbose_name=_('In language'), related_name='events', blank=True)
+    in_language = models.ManyToManyField(Language, verbose_name=_(
+        'In language'), related_name='events', blank=True)
 
     images = models.ManyToManyField(Image, related_name='events', blank=True)
 
     deleted = models.BooleanField(default=False, db_index=True)
 
     is_virtualevent = models.BooleanField(default=False, db_index=True)
-    virtualevent_url = models.URLField(verbose_name=_('Virtual event location'), blank=True, null=True, max_length=1000)
+    virtualevent_url = models.URLField(verbose_name=_('Virtual event location'),
+                                       blank=True, null=True, max_length=1000)
 
-    replaced_by = models.ForeignKey('Event', on_delete=models.SET_NULL, related_name='aliases', null=True, blank=True)
+    replaced_by = models.ForeignKey(
+        'Event', on_delete=models.SET_NULL, related_name='aliases', null=True, blank=True)
 
     # Custom fields not from schema.org
     keywords = models.ManyToManyField(Keyword, related_name='events')
-    audience = models.ManyToManyField(Keyword, related_name='audience_events', blank=True)
+    audience = models.ManyToManyField(
+        Keyword, related_name='audience_events', blank=True)
 
     class Meta:
         verbose_name = _('event')
@@ -613,7 +711,8 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
 
         if self.replaced_by and not self.deleted:
             self.deleted = True
-            logger.warning("Event replaced without soft deleting. Soft deleting automatically", extra={'event': self})
+            logger.warning(
+                "Event replaced without soft deleting. Soft deleting automatically", extra={'event': self})
 
         # needed to cache location event numbers
         old_location = None
@@ -638,7 +737,8 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
         end = getattr(self, 'end_time', None)
         if start and end:
             if start > end:
-                raise ValidationError({'end_time': _('The event end time cannot be earlier than the start time.')})
+                raise ValidationError(
+                    {'end_time': _('The event end time cannot be earlier than the start time.')})
 
         if (self.keywords.filter(deprecated=True) or self.audience.filter(deprecated=True)) and (
                 not self.deleted):
@@ -651,12 +751,15 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
 
         # needed to cache location event numbers
         if not old_location and self.location:
-            Place.objects.filter(id=self.location.id).update(n_events_changed=True)
+            Place.objects.filter(id=self.location.id).update(
+                n_events_changed=True)
         if old_location and not self.location:
             # drafts (or imported events) may not always have location set
-            Place.objects.filter(id=old_location.id).update(n_events_changed=True)
+            Place.objects.filter(id=old_location.id).update(
+                n_events_changed=True)
         if old_location and self.location and old_location != self.location:
-            Place.objects.filter(id__in=(old_location.id, self.location.id)).update(n_events_changed=True)
+            Place.objects.filter(id__in=(old_location.id, self.location.id)).update(
+                n_events_changed=True)
 
         # send notifications
         if old_publication_status == PublicationStatus.DRAFT and self.publication_status == PublicationStatus.PUBLIC:
@@ -670,7 +773,8 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
         name = ''
         languages = [lang[0] for lang in settings.LANGUAGES]
         for lang in languages:
-            lang = lang.replace('-', '_')  # to handle complex codes like e.g. zh-hans
+            # to handle complex codes like e.g. zh-hans
+            lang = lang.replace('-', '_')
             s = getattr(self, 'name_%s' % lang, None)
             if s:
                 name = s
@@ -705,11 +809,13 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
 
     def _send_notification(self, notification_type, recipient_list, request=None):
         if len(recipient_list) == 0:
-            logger.warning("No recipients for notification type '%s'" % notification_type, extra={'event': self})
+            logger.warning("No recipients for notification type '%s'" %
+                           notification_type, extra={'event': self})
             return
         context = {'event': self}
         try:
-            rendered_notification = render_notification_template(notification_type, context)
+            rendered_notification = render_notification_template(
+                notification_type, context)
         except NotificationTemplateException as e:
             logger.error(e, exc_info=True, extra={'request': request})
             return
@@ -722,7 +828,8 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
                 html_message=rendered_notification['html_body']
             )
         except SMTPException as e:
-            logger.error(e, exc_info=True, extra={'request': request, 'event': self})
+            logger.error(e, exc_info=True, extra={
+                         'request': request, 'event': self})
 
     def _get_author_emails(self):
         author_emails = []
@@ -733,18 +840,21 @@ class Event(MPTTModel, BaseModel, SchemalessFieldMixin, ReplacedByMixin):
 
     def send_deleted_notification(self, request=None):
         recipient_list = self._get_author_emails()
-        self._send_notification(NotificationType.UNPUBLISHED_EVENT_DELETED, recipient_list, request)
+        self._send_notification(
+            NotificationType.UNPUBLISHED_EVENT_DELETED, recipient_list, request)
 
     def send_published_notification(self, request=None):
         recipient_list = self._get_author_emails()
-        self._send_notification(NotificationType.EVENT_PUBLISHED, recipient_list, request)
+        self._send_notification(
+            NotificationType.EVENT_PUBLISHED, recipient_list, request)
 
     def send_draft_posted_notification(self, request=None):
         recipient_list = []
         for admin in self.publisher.admin_users.all():
             if admin.email:
                 recipient_list.append(admin.email)
-        self._send_notification(NotificationType.DRAFT_POSTED, recipient_list, request)
+        self._send_notification(
+            NotificationType.DRAFT_POSTED, recipient_list, request)
 
 
 reversion.register(Event)
@@ -765,14 +875,28 @@ def keyword_added_or_removed(sender, model=None,
             instance.save(update_fields=("n_events_changed",))
 
 
+class PaymentMethod(models.Model, SimpleValueMixin):
+    id = models.CharField(max_length=100, primary_key=True)
+    name = models.CharField(verbose_name=('Name'), blank=True, max_length=25)
+
+    def value_fields(self):
+        return ['name']
+
+
 class Offer(models.Model, SimpleValueMixin):
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, db_index=True, related_name='offers')
-    price = models.CharField(verbose_name=_('Price'), blank=True, max_length=1000)
-    info_url = models.URLField(verbose_name=_('Web link to offer'), blank=True, null=True, max_length=1000)
-    description = models.TextField(verbose_name=_('Offer description'), blank=True, null=True)
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, db_index=True, related_name='offers')
+    price = models.CharField(verbose_name=_(
+        'Price'), blank=True, max_length=1000)
+    info_url = models.URLField(verbose_name=_(
+        'Web link to offer'), blank=True, null=True, max_length=1000)
+    description = models.TextField(verbose_name=_(
+        'Offer description'), blank=True, null=True)
     # Don't expose is_free as an API field. It is used to distinguish
     # between missing price info and confirmed free entry.
     is_free = models.BooleanField(verbose_name=_('Is free'), default=False)
+    payment_methods = models.ManyToManyField(
+        PaymentMethod, blank=True, related_name='paymentmethods')
 
     def value_fields(self):
         return ['price', 'info_url', 'description', 'is_free']
@@ -783,7 +907,8 @@ reversion.register(Offer)
 
 class EventLink(models.Model, SimpleValueMixin):
     name = models.CharField(verbose_name=_('Name'), max_length=100, blank=True)
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, db_index=True, related_name='external_links')
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, db_index=True, related_name='external_links')
     language = models.ForeignKey(Language, on_delete=models.CASCADE)
     link = models.URLField()
 
@@ -795,10 +920,13 @@ class EventLink(models.Model, SimpleValueMixin):
 
 
 class Video(models.Model, SimpleValueMixin):
-    name = models.CharField(verbose_name=_('Name'), max_length=255, db_index=True, blank=True, null=True)
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, db_index=True, related_name='videos')
+    name = models.CharField(verbose_name=_(
+        'Name'), max_length=255, db_index=True, blank=True, null=True)
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, db_index=True, related_name='videos')
     url = models.URLField()
-    alt_text = models.CharField(verbose_name=_('Alt text'), max_length=320, null=True, blank=True)
+    alt_text = models.CharField(verbose_name=_(
+        'Alt text'), max_length=320, null=True, blank=True)
 
     class Meta:
         unique_together = (('name', 'event', 'url'),)
@@ -827,9 +955,11 @@ class ExportInfo(models.Model):
 
 
 class EventAggregate(models.Model):
-    super_event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name='aggregate', null=True)
+    super_event = models.OneToOneField(
+        Event, on_delete=models.CASCADE, related_name='aggregate', null=True)
 
 
 class EventAggregateMember(models.Model):
-    event_aggregate = models.ForeignKey(EventAggregate, on_delete=models.CASCADE, related_name='members')
+    event_aggregate = models.ForeignKey(
+        EventAggregate, on_delete=models.CASCADE, related_name='members')
     event = models.OneToOneField(Event, on_delete=models.CASCADE)

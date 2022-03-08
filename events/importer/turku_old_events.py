@@ -16,7 +16,6 @@ from django.conf import settings
 from .util import clean_text
 from .sync import ModelSyncher
 from .base import Importer, register_importer, recur_dict
-from .yso import KEYWORDS_TO_ADD_TO_AUDIENCE
 from os import mkdir
 from os.path import abspath, join, dirname, exists, basename, splitext
 from copy import copy
@@ -46,81 +45,96 @@ logger.addHandler(
 VIRTUAL_LOCATION_ID = "virtual:public"
 KEYW_LIST = []
 
-TURKU_KEYWORD_IDS = {
-    'Festivaalit': 'yso:p1304',  # Festivaalit
-    'Konferenssit ja kokoukset': 'yso:p38203',  # Konferenssit (ja kokoukset)
-    'Messut': 'yso:p4892',  # Messut
-    'Myyjäiset': 'yso:p9376',  # Myyjäiset
-    'Musiikki': 'yso:p1808',  # Musiikki
-    'Museot': 'yso:p4934',  # Museot
-    'Näyttelyt': 'yso:p5121',  # Näyttelyt
-    'Luennot': 'yso:p15875',  # Luennot
-    'Osallisuus': 'yso:p5164',  # Osallisuus
-    'Monikulttuurisuus': 'yso:p10647',  # Monikulttuurisuus
-    'Retket': 'yso:p25261',  # Retket
-    'Risteilyt': 'yso:p1917',  # Risteilyt
-    'Matkat': 'yso:p366',  # Matkat
-    'Matkailu': 'yso:p3917',  # Matkailu
-    'Opastus': 'yso:p2149',  # Opastus
-    'Teatteritaide': 'yso:p2625',  # Teatteritaide
-    'Muu esittävä taide': 'yso:p2850',  # Muu esittävä taide
-    'Urheilu': 'yso:p965',  # Urheilu
-    'Kirjallisuus': 'yso:p8113',  # Kirjallisuus
-    'Tapahtumat ja toiminnat': 'yso:p15238',  # Tapahtumat ja toiminnat
-    'Ruoka': 'yso:p3670',  # Ruoka
-    'Tanssi': 'yso:p1278',  # Tanssi
-    'Työpajat': 'yso:p19245',  # Työpajat
-    'Ulkoilu': 'yso:p2771',  # Ulkoilu
-    'Etäosallistuminen': 'yso:p26626',  # Etäosallistuminen
+TURKU_LUOKITUS_KEYWORD_IDS = {
+    # Hobby content target:
+    'Ajanvietepelit': 'tsl:p1',  # Ajanvietepelit
+    'Eläimet': 'tsl:p2',  # Eläimet
+    'Kielet': 'tsl:p3',  # Kielet
+    'Kirjallisuus ja sanataide': 'tsl:p4',  # Kirjallisuus ja sanataide
+    'Kuvataide ja media': 'tsl:p5',  # Kuvataide ja media
+    'Kädentaidot': 'tsl:p6',  # Kädentaidot
+    'Liikunta ja urheilu': 'tsl:p7',  # Liikunta ja urheilu
+    'Luonto': 'tsl:p8',  # Luonto
+    'Musiikki': 'tsl:p9',  # Musiikki
+    'Ruoka ja juoma': 'tsl:p10',  # Ruoka ja juoma
+    # Teatteri, tanssi ja sirkus (Previously "Teatteri, performanssi ja sirkus - tsl:p11")
+    'Teatteri, tanssi ja sirkus': 'tsl:p56',
+    'Tiede ja tekniikka': 'tsl:p12',  # Tiede ja tekniikka
+    'Yhteisöllisyys ja auttaminen': 'tsl:p13',  # Yhteisöllisyys ja auttaminen
+    'Muu': 'tsl:p58',  # Muu (Previously "Muut - tsl:p14")
+
+    # Event content based:
+    'Kuvataide': 'tsl:p28',  # Kuvataide
+    'Tanssi': 'tsl:p29',  # Tanssi
+    'Musiikki': 'tsl:p9',  # Musiikki
+    'Teatteri, performanssi ja sirkus': 'tsl:p11',  # Teatteri, performanssi ja sirkus
+    'Kirjallisuus ja sanataide': 'tsl:p4',  # Kirjallisuus ja sanataide
+    'Elokuva': 'tsl:p30',  # Elokuva
+    'Käsityöt': 'tsl:p31',  # Käsityöt
+    'Ruoka ja juoma': 'tsl:p10',  # Ruoka ja juoma
+    'Liikunta ja urheilu': 'tsl:p7',  # Liikunta ja urheilu
+    'Terveys ja hyvinvointi': 'tsl:p32',  # Terveys ja hyvinvointi
+    'Luonto ja kulttuuriympäristö': 'tsl:p33',  # Luonto ja kulttuuriympäristö
+    'Uskonto ja hengellisyys': 'tsl:p34',  # Uskonto ja hengellisyys
+    'Yritystoiminta ja työelämä': 'tsl:p35',  # Yritystoiminta ja työelämä
+    'Yhteiskunta': 'tsl:p36',  # Yhteiskunta
+    'Historia': 'tsl:p37',  # Historia
+    'Muu sisältö': 'tsl:p55',  # Muu sisältö
+
+    # Event type based:
+    'Festivaalit': 'tsl:p38',  # Festivaalit
+    'Kaupunkitapahtumat': 'tsl:p39',  # Kaupunkitapahtumat
+    'Keskustelutilaisuudet': 'tsl:p40',  # Keskustelutilaisuudet
+    'Kilpailut': 'tsl:p41',  # Kilpailut
+    'Kokoukset, seminaarit ja kongressit': 'tsl:p42',  # Kokoukset, seminaarit ja kongressit
+    'Konsertit': 'tsl:p43',  # Konsertit
+    'Koulutustapahtumat': 'tsl:p44',  # Koulutustapahtumat
+    'Leirit': 'tsl:p45',  # Leirit
+    'Luennot': 'tsl:p46',  # Luennot
+    'Markkinat': 'tsl:p47',  # Markkinat
+    'Messut': 'tsl:p48',  # Messut
+    'Myyjäiset': 'tsl:p49',  # Myyjäiset
+    'Näyttelyt': 'tsl:p50',  # Näyttelyt
+    'Opastukset': 'tsl:p51',  # Opastukset
+    'Retket': 'tsl:p52',  # Retket
+    'Työpajat': 'tsl:p53',  # Työpajat
+    'Verkostoitumistapahtumat': 'tsl:p54',  # Verkostoitumistapahtumat
+    'Muu tapahtumatyyppi': 'tsl:p57',  # Muu tapahtumatyyppi
 }
 
-TURKU_AUDIENCES_KEYWORD_IDS = {
-    'Aikuiset': 'yso:p5590',  # Aikuiset
-    'Lapsiperheet': 'yso:p13050',  # Lapsiperheet
-    'Maahanmuttajat': 'yso:p6165',  # Maahanmuuttujat
-    'Matkailijat': 'yso:p16596',  # Matkailijat
-    'Nuoret': 'yso:p11617',  # Nuoret
-    'Seniorit': 'yso:p2433',  # Seniorit
-    'Työnhakijat': 'yso:p9607',  # Työnhakijat
-    'Vammaiset': 'yso:p7179',  # Vammaiset
-    'Vauvat': 'yso:p15937',  # Vauvat
-    'Viranomaiset': 'yso:p6946',  # Viranomaiset
-    'Järjestöt': 'yso:p1393',  # järjestöt
-    'Yrittäjät': 'yso:p1178',  # Yrittäjät
-}
-
+# These words are not meant to be changed, as they come from the API.
 TURKU_DRUPAL_CATEGORY_EN_YSOID = {
-    'Exhibits': 'yso:p5121',  # Utställningar, Näyttelyt
-    'Festival and major events': 'yso:p1304',  # Festivaalit ja suurtapahtumat
-    'Meetings and congress ': 'yso:p7500',  # Möten, Kokoukset
-    'Trade fair and fair': 'yso:p4892',  # Messut, mässor
-    'Music': 'yso:p1808',  # Musiikki, musik
-    'Museum': 'yso:p4934',  # Museo,  museum (en), museer
-    'Lectures': 'yso:p15875',  # Luennot, föreläsningar
-    'Participation': 'yso:p5164',  # Osallisuus, delaktighet
-    'Multiculturalism': 'yso:p10647',  # Monikulttuurisuus, multikulturalism
-    'cruises and tours': ['yso:p1917', 'yso:p366'],  # Risteily, Matkat
-    'Trips': 'yso:p25261',  # Retket
-    'Guided tours and sightseeing tours': 'yso:p2149',  # Guidning, Opastukset
-    'Theatre and other performance art': ['yso:p2850', 'yso:p2625'],  # Esittävä taide
-    'Sports': 'yso:p965',  # Urheilu, Idrott
-    'Literature': 'yso:p8113',  # Kirjallisuus, litteratur
-    'Virtual events': 'yso:p26626',  # Etäosallistuminen
+    'Exhibits': 'tsl:p50',  # Näyttelyt
+    'Festival and major events': 'tsl:p38',  # Festivaalit
+    'Meetings and congress ': 'tsl:p42',  # Kokoukset, seminaarit ja kongressit
+    'Trade fair and fair': 'tsl:p48',  # Messut
+    'Music': 'tsl:p9',  # Musiikki
+    'Museum': 'tsl:p37',  # Historia
+    'Lectures': 'tsl:p46',  # Luennot
+    'Participation': 'tsl:p55',  # Muu
+    'Multiculturalism': 'tsl:p55',  # Muu (Previously "Muut - p14")
+    'cruises and tours': 'tsl:p52',  # Retket
+    'Trips': 'tsl:p52',  # Retket
+    'Guided tours and sightseeing tours': 'tsl:p51',  # Opastukset
+    'Theatre and other performance art': 'tsl:p11',  # Teatteri, performanssi ja sirkus
+    'Sports': 'tsl:p7',  # Liikunta ja urheilu
+    'Literature': 'tsl:p4',  # Kirjallisuus, litteratur
+    'Virtual events': 'tsl:p55',  # Muu
 }
 
 TURKU_DRUPAL_AUDIENCES_KEYWORD_EN_YSOID = {
-    'Adults': 'yso:p5590',
-    'Child families': 'yso:p13050',
-    'Immigrants': 'yso:p6165',
-    'Travellers': 'yso:p16596',
-    'Youth': 'yso:p11617',
-    'Elderly': 'yso:p2433',
-    'Jobseekers': 'yso:p9607',
-    'Disabled': 'yso:p7179',
-    'Infants and toddlers': 'yso:p15937',
-    'Authorities': 'yso:p6946',
-    'Associations and communities': 'yso:p1393',
-    'Entrepreneurs': 'yso:p1178',
+    'Adults': 'tsl:p21',  # Aikuiset
+    'Child families': 'tsl:p18',  # Lapset ja lapsiperheet
+    'Immigrants': 'tsl:p15',  # Maahamuuttaneet
+    'Travellers': 'tsl:p20',  # Nuoret aikuiset (Previously "Matkailijat - tsl:p24")
+    'Youth': 'tsl:p19',  # Nuoret
+    'Elderly': 'tsl:p22',  # Ikääntyneet
+    'Jobseekers': 'tsl:p25',  # Työnhakijat
+    'Disabled': 'tsl:p16',  # Toimintarajoitteiset
+    'Infants and toddlers': 'tsl:p17',  # Vauvat ja taaperot
+    'Authorities': 'tsl:p26',  # Yrittäjät
+    'Associations and communities': 'tsl:p26',  # Yrittäjät
+    'Entrepreneurs': 'tsl:p26',  # Yrittäjät
 }
 
 LANGUAGES_TURKU_OLD = ['fi', 'sv', 'en']
@@ -223,23 +237,23 @@ class TurkuOriginalImporter(Importer):
             self.cc_by_license = None
 
         try:
-            yso_data_source = DataSource.objects.get(id='yso')
+            tsl_data_source = DataSource.objects.get(id='tsl')
         except DataSource.DoesNotExist:
-            yso_data_source = None
+            tsl_data_source = None
 
-        if yso_data_source:  # Build a cached list of YSO keywords
+        if tsl_data_source:  # Build a cached list of YSO keywords
             cat_id_set = set()
-            for yso_val in TURKU_KEYWORD_IDS.values():
-                if isinstance(yso_val, tuple):
-                    for t_v in yso_val:
+            for tsl_val in TURKU_LUOKITUS_KEYWORD_IDS.values():
+                if isinstance(tsl_val, tuple):
+                    for t_v in tsl_val:
                         cat_id_set.add(t_v)
                 else:
-                    cat_id_set.add(yso_val)
-            KEYW_LIST = Keyword.objects.filter(data_source=yso_data_source).\
+                    cat_id_set.add(tsl_val)
+            KEYW_LIST = Keyword.objects.filter(data_source=tsl_data_source).\
                 filter(id__in=cat_id_set)
-            self.yso_by_id = {p.id: p for p in KEYW_LIST}
+            self.tsl_by_id = {p.id: p for p in KEYW_LIST}
         else:
-            self.yso_by_id = {}
+            self.tsl_by_id = {}
 
         if self.options['cached']:
             requests_cache.install_cache('turku')
@@ -288,248 +302,252 @@ class TurkuOriginalImporter(Importer):
         if end_time < datetime.now().replace(tzinfo=TZ) - timedelta(days=365):
             return {'start_time': start_time, 'end_time': end_time}
 
-        if not bool(int(eventTku['is_hobby'])):
-            eid = int(eventTku['drupal_nid'])
-            evItem = events[eid]
-            evItem['id'] = '%s:%s' % (self.data_source.id, eid)
-            evItem['origin_id'] = eid
-            evItem['data_source'] = self.data_source
-            evItem['publisher'] = self.organization
-            evItem['end_time'] = end_time
+        # if not bool(int(eventTku['is_hobby'])):
 
-            ok_tags = (
-                'u', 'b', 'h2', 'h3', 'em', 'ul',
-                'li', 'strong', 'br', 'p', 'a'
-            )
+        eid = int(eventTku['drupal_nid'])
+        evItem = events[eid]
+        evItem['id'] = '%s:%s' % (self.data_source.id, eid)
+        evItem['origin_id'] = eid
+        evItem['data_source'] = self.data_source
+        evItem['publisher'] = self.organization
+        evItem['end_time'] = end_time
 
-            evItem['name'] = {
-                "fi": eventTku['title_fi'],
-                "sv": eventTku['title_sv'],
-                "en": eventTku['title_en']
+        ok_tags = (
+            'u', 'b', 'h2', 'h3', 'em', 'ul',
+            'li', 'strong', 'br', 'p', 'a'
+        )
+
+        evItem['name'] = {
+            "fi": eventTku['title_fi'],
+            "sv": eventTku['title_sv'],
+            "en": eventTku['title_en']
+        }
+
+        evItem['description'] = {
+            "fi": bleach.clean(self.with_value(
+                eventTku,
+                'description_markup_fi',
+                ''),   tags=[],   strip=True),
+            "sv": bleach.clean(self.with_value(
+                eventTku,
+                'description_markup_sv',
+                ''),   tags=[],   strip=True),
+            "en": bleach.clean(self.with_value(
+                eventTku,
+                'description_markup_en',
+                ''),   tags=[],   strip=True)
+        }
+
+        evItem['short_description'] = {
+            "fi": bleach.clean(self.with_value(
+                eventTku,
+                'lead_paragraph_markup_fi',
+                ''),   tags=[],   strip=True),
+            "sv": bleach.clean(self.with_value(
+                eventTku,
+                'lead_paragraph_markup_sv',
+                ''),   tags=[],   strip=True),
+            "en": bleach.clean(self.with_value(
+                eventTku,
+                'lead_paragraph_markup_en',
+                ''),   tags=[],   strip=True)
+        }
+
+        if eventTku['event_organizer']:
+            eo = eventTku['event_organizer']
+            evItem['provider'] = {
+                "fi": eo, "sv": eo, "en": eo
+            }
+        else:
+            evItem['provider'] = {
+                "fi": 'Turku', "sv": 'Åbo', "en": 'Turku'
             }
 
-            evItem['description'] = {
-                "fi": bleach.clean(self.with_value(
-                    eventTku,
-                    'description_markup_fi',
-                    ''),   tags=[],   strip=True),
-                "sv": bleach.clean(self.with_value(
-                    eventTku,
-                    'description_markup_sv',
-                    ''),   tags=[],   strip=True),
-                "en": bleach.clean(self.with_value(
-                    eventTku,
-                    'description_markup_en',
-                    ''),   tags=[],   strip=True)
-            }
+        location_extra_info = ''
 
-            evItem['short_description'] = {
-                "fi": bleach.clean(self.with_value(
-                    eventTku,
-                    'lead_paragraph_markup_fi',
-                    ''),   tags=[],   strip=True),
-                "sv": bleach.clean(self.with_value(
-                    eventTku,
-                    'lead_paragraph_markup_sv',
-                    ''),   tags=[],   strip=True),
-                "en": bleach.clean(self.with_value(
-                    eventTku,
-                    'lead_paragraph_markup_en',
-                    ''),   tags=[],   strip=True)
-            }
+        if self.with_value(eventTku, 'address_extension', ''):
+            location_extra_info += '%s, ' % bleach.clean(self.with_value(
+                eventTku,
+                'address_extension',
+                ''), tags=[], strip=True)
+        if self.with_value(eventTku, 'city_district', ''):
+            location_extra_info += '%s, ' % bleach.clean(self.with_value(
+                eventTku,
+                'city_district',
+                ''), tags=[], strip=True)
+        if self.with_value(eventTku, 'place', ''):
+            location_extra_info += '%s' % bleach.clean(self.with_value(
+                eventTku,
+                'place',
+                ''), tags=[], strip=True)
 
-            if eventTku['event_organizer']:
-                eo = eventTku['event_organizer']
-                evItem['provider'] = {
-                    "fi": eo, "sv": eo, "en": eo
-                }
-            else:
-                evItem['provider'] = {
-                    "fi": 'Turku', "sv": 'Åbo', "en": 'Turku'
-                }
+        if location_extra_info.strip().endswith(','):
+            location_extra_info = location_extra_info.strip()[:-1]
 
-            location_extra_info = ''
+        location_extra_info_formatted = '%(address)s / %(extra)s' % {
+            'address': eventTku['address'], 'extra': location_extra_info} if location_extra_info else eventTku['address']
+        # Define location_extra_info dict.
+        evItem['location_extra_info'] = {
+            "fi": location_extra_info_formatted,
+            "sv": location_extra_info_formatted,
+            "en": location_extra_info_formatted
+        }
 
-            if self.with_value(eventTku, 'address_extension', ''):
-                location_extra_info += '%s, ' % bleach.clean(self.with_value(
-                    eventTku,
-                    'address_extension',
-                    ''), tags=[], strip=True)
-            if self.with_value(eventTku, 'city_district', ''):
-                location_extra_info += '%s, ' % bleach.clean(self.with_value(
-                    eventTku,
-                    'city_district',
-                    ''), tags=[], strip=True)
-            if self.with_value(eventTku, 'place', ''):
-                location_extra_info += '%s' % bleach.clean(self.with_value(
-                    eventTku,
-                    'place',
-                    ''), tags=[], strip=True)
+        if eventTku['event_image_ext_url']:
+            if int(eventTku['event_image_license']) == 1 and event_type in ('m', 's'):
+                # Saves an image from the URL onto our server & database Image table.
+                # We only want mother event images and single event images.
 
-            if location_extra_info.strip().endswith(','):
-                location_extra_info = location_extra_info.strip()[:-1]
+                IMAGE_TYPE = 'jpg'
+                PATH_EXTEND = 'images'
 
-            location_extra_info_formatted = '%(address)s / %(extra)s' % {'address': eventTku['address'], 'extra': location_extra_info} if location_extra_info else eventTku['address']
-            # Define location_extra_info dict.
-            evItem['location_extra_info'] = {
-                "fi": location_extra_info_formatted,
-                "sv": location_extra_info_formatted,
-                "en": location_extra_info_formatted
-            }
+                def request_image_url():
+                    img = requests.get(eventTku['event_image_ext_url']['src'],
+                                       headers={'User-Agent': 'Mozilla/5.0'}).content
+                    imgfile = eventTku['drupal_nid']
+                    path = '%(root)s/%(pathext)s/%(img)s.%(type)s' % ({
+                        'root': settings.MEDIA_ROOT,
+                        'pathext': PATH_EXTEND,
+                        'img': imgfile,
+                        'type': IMAGE_TYPE
+                    })
+                    with open(path, 'wb') as file:
+                        file.write(img)
+                    return '%s/%s.%s' % (PATH_EXTEND, imgfile, IMAGE_TYPE)
 
-            if eventTku['event_image_ext_url']:
-                if int(eventTku['event_image_license']) == 1 and event_type in ('m', 's'):
-                    # Saves an image from the URL onto our server & database Image table.
-                    # We only want mother event images and single event images.
+                self.image_obj, _ = Image.objects.update_or_create(
+                    defaults=dict(name='', photographer_name='', alt_text=''), **dict(
+                        license=self.cc_by_license,
+                        data_source=self.data_source,
+                        publisher=self.organization,
+                        image=request_image_url()))
 
-                    IMAGE_TYPE = 'jpg'
-                    PATH_EXTEND = 'images'
+        def set_attr(field_name, val):
+            if field_name in evItem:
+                if evItem[field_name] != val:
+                    logger.warning(
+                        'Event %s: %s mismatch (%s vs. %s)' %
+                        (eid, field_name, evItem[field_name], val)
+                    )
+                    return
+            evItem[field_name] = val
 
-                    def request_image_url():
-                        img = requests.get(eventTku['event_image_ext_url']['src'],
-                                           headers={'User-Agent': 'Mozilla/5.0'}).content
-                        imgfile = eventTku['drupal_nid']
-                        path = '%(root)s/%(pathext)s/%(img)s.%(type)s' % ({
-                            'root': settings.MEDIA_ROOT,
-                            'pathext': PATH_EXTEND,
-                            'img': imgfile,
-                            'type': IMAGE_TYPE
-                        })
-                        with open(path, 'wb') as file:
-                            file.write(img)
-                        return '%s/%s.%s' % (PATH_EXTEND, imgfile, IMAGE_TYPE)
+        evItem['date_published'] = self.dt_parse(self.timeToTimestamp(
+            str(eventTku['start_date']))
+        )
+        set_attr('start_time', self.dt_parse(self.timeToTimestamp(
+            str(eventTku['start_date'])))
+        )
+        set_attr('end_time', self.dt_parse(self.timeToTimestamp(
+            str(eventTku['end_date'])))
+        )
+        event_in_language = evItem.get('in_language', set())
+        try:
+            eventLang = Language.objects.get(id='fi')
+        except:
+            logger.info('Language (fi) not found.')
+        if eventLang:
+            event_in_language.add(self.languages[eventLang.id])
 
-                    self.image_obj, _ = Image.objects.update_or_create(
-                        defaults=dict(name='', photographer_name='', alt_text=''), **dict(
-                            license=self.cc_by_license,
-                            data_source=self.data_source,
-                            publisher=self.organization,
-                            image=request_image_url()))
+        evItem['in_language'] = event_in_language
 
-            def set_attr(field_name, val):
-                if field_name in evItem:
-                    if evItem[field_name] != val:
-                        logger.warning(
-                            'Event %s: %s mismatch (%s vs. %s)' %
-                            (eid, field_name, evItem[field_name], val)
-                        )
-                        return
-                evItem[field_name] = val
+        event_keywords = evItem.get('keywords', set())
+        event_audience = evItem.get('audience', set())
 
-            evItem['date_published'] = self.dt_parse(self.timeToTimestamp(
-                str(eventTku['start_date']))
-            )
-            set_attr('start_time', self.dt_parse(self.timeToTimestamp(
-                str(eventTku['start_date'])))
-            )
-            set_attr('end_time', self.dt_parse(self.timeToTimestamp(
-                str(eventTku['end_date'])))
-            )
-            event_in_language = evItem.get('in_language', set())
-            try:
-                eventLang = Language.objects.get(id='fi')
-            except:
-                logger.info('Language (fi) not found.')
-            if eventLang:
-                event_in_language.add(self.languages[eventLang.id])
-
-            evItem['in_language'] = event_in_language
-
-            event_keywords = evItem.get('keywords', set())
-            event_audience = evItem.get('audience', set())
-
-            if eventTku['event_categories'] is not None:
-                eventTku['event_categories'] = eventTku['event_categories']+','
-                categories = eventTku['event_categories'].split(',')
-                for name in categories:
-                    name = name.strip()
-                    if name == 'Theatre and other perfomance art':
-                        name = 'Theatre and other performance art'
-                        # Theatre and other performance art is spelled incorrectly in the JSON. "Perfomance".
-                    if name == 'Virtual events':
-                        evItem['location']['id'] = VIRTUAL_LOCATION_ID
-                    if name in TURKU_DRUPAL_CATEGORY_EN_YSOID.keys():
-                        ysoId = TURKU_DRUPAL_CATEGORY_EN_YSOID[name]
-                        if isinstance(ysoId, list):
-                            for x in range(len(ysoId)):
-                                event_keywords.add(
-                                    Keyword.objects.get(id=ysoId[x])
-                                )
-                        else:
+        if eventTku['event_categories'] is not None:
+            eventTku['event_categories'] = eventTku['event_categories']+','
+            categories = eventTku['event_categories'].split(',')
+            for name in categories:
+                name = name.strip()
+                if name == 'Theatre and other perfomance art':
+                    name = 'Theatre and other performance art'
+                    # Theatre and other performance art is spelled incorrectly in the JSON. "Perfomance".
+                if name == 'Virtual events':
+                    evItem['location']['id'] = VIRTUAL_LOCATION_ID
+                if name in TURKU_DRUPAL_CATEGORY_EN_YSOID.keys():
+                    ysoId = TURKU_DRUPAL_CATEGORY_EN_YSOID[name]
+                    if isinstance(ysoId, list):
+                        for x in range(len(ysoId)):
                             event_keywords.add(
-                                Keyword.objects.get(id=ysoId)
+                                Keyword.objects.get(id=ysoId[x])
                             )
-
-            if eventTku.get('keywords', None):
-                eventTku['keywords'] = eventTku['keywords'] + ','
-                keywords = eventTku['keywords'].split(',')
-                for name in keywords:
-                    name.strip()
-                    if name not in TURKU_DRUPAL_CATEGORY_EN_YSOID.keys():
-                        try:
-                            event_keywords.add(
-                                Keyword.objects.get(name=name)
-                            )
-                        except:
-                            if name != "":
-                                notFoundKeys.append({
-                                    name: eventTku['drupal_nid']
-                                })
-                            pass
-
-            evItem['keywords'] = event_keywords
-
-            if eventTku['target_audience'] is not None:
-                eventTku['target_audience'] = eventTku['target_audience'] + ','
-                audience = eventTku['target_audience'].split(',')
-                for name in audience:
-                    if name in TURKU_DRUPAL_AUDIENCES_KEYWORD_EN_YSOID.keys():
-                        ysoId = TURKU_DRUPAL_AUDIENCES_KEYWORD_EN_YSOID[name]
-                        event_audience.add(
+                    else:
+                        event_keywords.add(
                             Keyword.objects.get(id=ysoId)
                         )
 
-            evItem['audience'] = event_audience
-            evItem['info_url'] = {
-                "fi": eventTku['website_url'],
-                "sv": eventTku['website_url'],
-                "en": eventTku['website_url']
-            }
-
-            if event_type in ('m', 's'):
-                # Add a default offer
-                free_offer = {
-                    'is_free': True,
-                    'price': None,
-                    'description': None,
-                    'info_url': None,
-                }
-                eventOffer_is_free = bool(int(eventTku['free_event']))
-                # Fill if events is not free price event
-                if not eventOffer_is_free:
-                    free_offer['is_free'] = False
-                    if eventTku['event_price']:
-                        ok_tags = (
-                            'u', 'b', 'h2', 'h3', 'em', 'ul',
-                            'li', 'strong', 'br', 'p', 'a'
+        if eventTku.get('keywords', None):
+            eventTku['keywords'] = eventTku['keywords'] + ','
+            keywords = eventTku['keywords'].split(',')
+            for name in keywords:
+                name.strip()
+                if name not in TURKU_DRUPAL_CATEGORY_EN_YSOID.keys():
+                    try:
+                        event_keywords.add(
+                            Keyword.objects.get(name=name)
                         )
-                        price = str(eventTku['event_price'])
-                        price = bleach.clean(price, tags=ok_tags, strip=True)
-                        free_offer_price = clean_text(price, True)
-                        free_offer['price'] = {'fi': free_offer_price}
-                        free_offer['info_url'] = {'fi': None}
-                    if str(eventTku['buy_tickets_url']):
-                        free_offer_buy_tickets = eventTku['buy_tickets_url']
-                        free_offer['info_url'] = {'fi': free_offer_buy_tickets}
-                    free_offer['description'] = None
-                evItem['offers'] = [free_offer]
+                    except:
+                        if name != "":
+                            notFoundKeys.append({
+                                name: eventTku['drupal_nid']
+                            })
+                        pass
 
-            if event_type == "m":
-                evItem['super_event_type'] = Event.SuperEventType.RECURRING
-            if event_type == "c" or event_type == "s":
-                evItem['super_event_type'] = None
+        evItem['keywords'] = event_keywords
 
-            return evItem
+        if eventTku['target_audience'] is not None:
+            eventTku['target_audience'] = eventTku['target_audience'] + ','
+            audience = eventTku['target_audience'].split(',')
+            for name in audience:
+                if name in TURKU_DRUPAL_AUDIENCES_KEYWORD_EN_YSOID.keys():
+                    ysoId = TURKU_DRUPAL_AUDIENCES_KEYWORD_EN_YSOID[name]
+                    event_audience.add(
+                        Keyword.objects.get(id=ysoId)
+                    )
+
+        evItem['audience'] = event_audience
+        evItem['info_url'] = {
+            "fi": eventTku['website_url'],
+            "sv": eventTku['website_url'],
+            "en": eventTku['website_url']
+        }
+
+        if event_type in ('m', 's'):
+            # Add a default offer
+            free_offer = {
+                'is_free': True,
+                'price': None,
+                'description': None,
+                'info_url': None,
+            }
+            eventOffer_is_free = bool(int(eventTku['free_event']))
+            # Fill if events is not free price event
+            if not eventOffer_is_free:
+                free_offer['is_free'] = False
+                if eventTku['event_price']:
+                    ok_tags = (
+                        'u', 'b', 'h2', 'h3', 'em', 'ul',
+                        'li', 'strong', 'br', 'p', 'a'
+                    )
+                    price = str(eventTku['event_price'])
+                    price = bleach.clean(price, tags=ok_tags, strip=True)
+                    free_offer_price = clean_text(price, True)
+                    free_offer['price'] = {'fi': free_offer_price}
+                    free_offer['info_url'] = {'fi': None}
+                if str(eventTku['buy_tickets_url']):
+                    free_offer_buy_tickets = eventTku['buy_tickets_url']
+                    free_offer['info_url'] = {'fi': free_offer_buy_tickets}
+                free_offer['description'] = None
+            evItem['offers'] = [free_offer]
+
+        if event_type == "m":
+            evItem['super_event_type'] = Event.SuperEventType.RECURRING
+        if event_type == "c" or event_type == "s":
+            evItem['super_event_type'] = None
+
+        evItem['is_hobby'] = eventTku['is_hobby']
+
+        return evItem
 
     def _recur_fetch_paginated_url(self, url, lang, events):
         max_tries = 10
@@ -601,19 +619,37 @@ class TurkuOriginalImporter(Importer):
         return root_doc, mothers_with_children, mothers_children
 
     def save_extra(self, drupal_url, mothersList, childList):
+
         for json_mother_event in drupal_url['events']:
             json_event = json_mother_event['event']
+
+            try:
+                # Updating the existing DB events that need is_hobby.
+                eventToUpdate = Event.objects.get(
+                    origin_id=json_event['drupal_nid'])
+                if int(json_event['is_hobby']) == 1:
+                    eventToUpdate.type_id = 4
+                else:
+                    eventToUpdate.type_id = 1
+
+                eventToUpdate.save()
+            except:
+                pass
+
             if json_event['drupal_nid']:
                 for x in childList:
                     if json_event['drupal_nid'] == x['drupal_nid_super']:
                         try:
-                            child = Event.objects.get(origin_id=x['drupal_nid'])
-                            mother = Event.objects.get(origin_id=json_event['drupal_nid'])
+                            child = Event.objects.get(
+                                origin_id=x['drupal_nid'])
+                            mother = Event.objects.get(
+                                origin_id=json_event['drupal_nid'])
 
                             sub_event_type = None
                             #sub_recurring, sub_umbrella
                             if mother.super_event_type == "recurring":
                                 sub_event_type = "sub_recurring"
+
                             elif mother.super_event_type == "umbrella":
                                 sub_event_type = "sub_umbrella"
 
@@ -654,11 +690,14 @@ class TurkuOriginalImporter(Importer):
 
                         try:
                             # Re-get object from Event once saved.
-                            child = Event.objects.get(origin_id=x['drupal_nid'])
-                            mother = Event.objects.get(origin_id=json_event['drupal_nid'])
+                            child = Event.objects.get(
+                                origin_id=x['drupal_nid'])
+                            mother = Event.objects.get(
+                                origin_id=json_event['drupal_nid'])
                             # Get object from Offer once we have the Event object.
                             try:
-                                motherOffer = Offer.objects.get(event_id=mother.id)
+                                motherOffer = Offer.objects.get(
+                                    event_id=mother.id)
                                 Offer.objects.update_or_create(
                                     event_id=child.id,
                                     price=motherOffer.price,
@@ -701,16 +740,19 @@ class TurkuOriginalImporter(Importer):
                 def fetch_from_image_table(p, p2):
                     try:
                         eventObj = Event.objects.get(origin_id=json_event[p])
-                        img_format = '%s/%s.%s' % ('images', json_event[p2], 'jpg')
+                        img_format = '%s/%s.%s' % ('images',
+                                                   json_event[p2], 'jpg')
                         img_obj_returned = Image.objects.get(image=img_format)
                         eventObj.images.add(img_obj_returned.id)
                         return img_obj_returned
                     except:
                         pass
                     return None
-                fetched_img = fetch_from_image_table('drupal_nid', 'drupal_nid')  # Mothers and Singles
+                fetched_img = fetch_from_image_table(
+                    'drupal_nid', 'drupal_nid')  # Mothers and Singles
                 if not fetched_img:
-                    fetch_from_image_table('drupal_nid', 'drupal_nid_super')  # Children inherit their Mothers images.
+                    # Children inherit their Mothers images.
+                    fetch_from_image_table('drupal_nid', 'drupal_nid_super')
             except:
                 pass
 
@@ -720,7 +762,8 @@ class TurkuOriginalImporter(Importer):
         lang = self.supported_languages
         # Fetch JSON for post-processing but also process & import events.
         try:
-            RESPONSE_JSON, mother_events, child_events = self._recur_fetch_paginated_url(URL, lang, events)
+            RESPONSE_JSON, mother_events, child_events = self._recur_fetch_paginated_url(
+                URL, lang, events)
         except APIBrokenError:
             return
 

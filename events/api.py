@@ -5,6 +5,7 @@ from __future__ import unicode_literals
 import base64
 import re
 import struct
+import difflib
 import time
 import urllib.parse
 from copy import deepcopy
@@ -20,7 +21,7 @@ from django.core.files.base import ContentFile
 from django.db.utils import IntegrityError
 from django.conf import settings
 from django.urls import NoReverseMatch
-from django.db.models import Q, QuerySet
+from django.db.models import Q, QuerySet, When, Case, CharField
 from django.utils.translation import ugettext_lazy as _
 from django.utils import timezone
 from django.utils.encoding import force_text
@@ -63,12 +64,13 @@ from events.custom_elasticsearch_search_backend import (
 from events.extensions import apply_select_and_prefetch, get_extensions_from_request
 from events.models import (
     Place, Event, Keyword, KeywordSet, Language, OpeningHoursSpecification, EventLink,
-    Offer, DataSource, Image, PublicationStatus, PUBLICATION_STATUSES, License, Video
+    Offer, DataSource, Image, PublicationStatus, PUBLICATION_STATUSES, License, Video, PaymentMethod
 )
-from events.translation import EventTranslationOptions
+from events.translation import EventTranslationOptions, ImageTranslationOptions
 from helevents.models import User
 from events.renderers import DOCXRenderer
 from events.signals import post_save, post_update
+
 
 def get_view_name(view):
     if type(view) is APIRootView:
@@ -141,7 +143,8 @@ def get_authenticated_data_source_and_publisher(request):
         data_source = request.auth.get_authenticated_data_source()
         publisher = data_source.owner
         if not publisher:
-            raise PermissionDenied(_("Data source doesn't belong to any organization"))
+            raise PermissionDenied(
+                _("Data source doesn't belong to any organization"))
     else:
         # objects *created* by api are marked coming from the system data source unless api_key is provided
         # we must optionally create the system data source here, as the settings may have changed at any time
@@ -240,7 +243,8 @@ class JSONLDRelatedField(relations.HyperlinkedRelatedField):
             context = self.context.copy()
             # To avoid infinite recursion, only include sub/super events one level at a time
             if 'include' in context:
-                context['include'] = [x for x in context['include'] if x != 'sub_events' and x != 'super_event']
+                context['include'] = [x for x in context['include']
+                                      if x != 'sub_events' and x != 'super_event']
             return self.related_serializer(obj, hide_ld_context=self.hide_ld_context,
                                            context=context).data
         link = super(JSONLDRelatedField, self).to_representation(obj)
@@ -253,9 +257,14 @@ class JSONLDRelatedField(relations.HyperlinkedRelatedField):
     def to_internal_value(self, value):
         # TODO: JA If @id is missing, this will complain just about value not being JSON
         if not isinstance(value, dict) or '@id' not in value:
-            raise serializers.ValidationError(self.invalid_json_error % type(value).__name__)
+            raise serializers.ValidationError(
+                self.invalid_json_error % type(value).__name__)
 
         url = value['@id']
+
+        if not isinstance(url, str):
+            url = str(url)
+
         if not url:
             if self.required:
                 raise serializers.ValidationError(_('This field is required.'))
@@ -284,8 +293,7 @@ class EnumChoiceField(serializers.Field):
     def to_representation(self, obj):
         if obj is None:
             return None
-        return self.prefix + utils.get_value_from_tuple_list(self.choices,
-                                                             obj, 1)
+        return self.prefix + str(utils.get_value_from_tuple_list(self.choices, obj, 1))
 
     def to_internal_value(self, data):
         value = utils.get_value_from_tuple_list(self.choices,
@@ -387,7 +395,8 @@ class TranslatedModelSerializer(serializers.ModelSerializer):
 
         extra_fields = {}  # will contain the transformation result
         for field_name in self.translated_fields:
-            obj = data.get(field_name, None)  # { "fi": "musiikkiklubit", "sv": ... }
+            # { "fi": "musiikkiklubit", "sv": ... }
+            obj = data.get(field_name, None)
             if not obj:
                 continue
             if not isinstance(obj, dict):
@@ -397,8 +406,10 @@ class TranslatedModelSerializer(serializers.ModelSerializer):
             for language in (lang for lang in utils.get_fixed_lang_codes() if lang in obj):
                 value = obj[language]  # "musiikkiklubit"
                 if language == settings.LANGUAGES[0][0]:  # default language
-                    extra_fields[field_name] = value  # { "name": "musiikkiklubit" }
-                extra_fields['{}_{}'.format(field_name, language)] = value  # { "name_fi": "musiikkiklubit" }
+                    # { "name": "musiikkiklubit" }
+                    extra_fields[field_name] = value
+                # { "name_fi": "musiikkiklubit" }
+                extra_fields['{}_{}'.format(field_name, language)] = value
             del data[field_name]  # delete original translated fields
 
         # handle other than translated fields
@@ -449,7 +460,8 @@ class LinkedEventsSerializer(TranslatedModelSerializer, MPTTModelSerializer):
         Hides `@context` from JSON, can be used in nested
         serializers
     """
-    system_generated_fields = ('created_time', 'last_modified_time', 'created_by', 'last_modified_by')
+    system_generated_fields = (
+        'created_time', 'last_modified_time', 'created_by', 'last_modified_by')
     only_admin_visible_fields = ('created_by', 'last_modified_by')
 
     def __init__(self, instance=None, files=None,
@@ -492,9 +504,11 @@ class LinkedEventsSerializer(TranslatedModelSerializer, MPTTModelSerializer):
         if self.method in permissions.SAFE_METHODS:
             return
         # post and put methods need further authentication
-        self.data_source, self.publisher = get_authenticated_data_source_and_publisher(self.request)
+        self.data_source, self.publisher = get_authenticated_data_source_and_publisher(
+            self.request)
         if not self.publisher:
-            raise PermissionDenied(_("User doesn't belong to any organization"))
+            raise PermissionDenied(
+                _("User doesn't belong to any organization"))
         # in case of bulk operations, the instance may be a huge queryset, already filtered by permission
         # therefore, we only do permission checks for single instances
         if not isinstance(instance, QuerySet) and instance:
@@ -504,12 +518,13 @@ class LinkedEventsSerializer(TranslatedModelSerializer, MPTTModelSerializer):
                 if not instance.data_source == self.data_source:
                     raise PermissionDenied()
             else:
-                # without api key, the user will have to be admin
-                if not instance.is_user_editable() or not instance.can_be_edited_by(self.user):
-                    # An exception to allow users to publish events using default images from the Imagebank
-                    # even if they aren't bound to the Imagebank-organization for regular or admin rights.
-                    if not isinstance(instance, Image):
-                        raise PermissionDenied()
+                if not isinstance(instance, Image):
+                    ''' Without the API key, the user needs Admin rights.
+                        An exception to allow users to publish events using default images from the Imagebank
+                        even if they aren't bound to the Imagebank-organization for regular or admin rights. '''
+                    if hasattr(instance, 'is_user_editable') and hasattr(instance, 'can_be_edited_by'):
+                        if not instance.is_user_editable() or not instance.can_be_edited_by(self.user):
+                            raise PermissionDenied()
 
     def to_internal_value(self, data):
         for field in self.system_generated_fields:
@@ -631,7 +646,8 @@ class LinkedEventsSerializer(TranslatedModelSerializer, MPTTModelSerializer):
             # null or empty strings are not allowed, they are the same as missing name!
             name_exists = 'name' in data and data['name']
         if not name_exists:
-            raise serializers.ValidationError({'name': _('The name must be specified.')})
+            raise serializers.ValidationError(
+                {'name': _('The name must be specified.')})
         super().validate(data)
         return data
 
@@ -648,7 +664,8 @@ class LinkedEventsSerializer(TranslatedModelSerializer, MPTTModelSerializer):
             instance = super().create(validated_data)
         except IntegrityError as error:
             if 'duplicate' and 'pkey' in str(error):
-                raise serializers.ValidationError({'id': _("An object with given id already exists.")})
+                raise serializers.ValidationError(
+                    {'id': _("An object with given id already exists.")})
             else:
                 raise error
         return instance
@@ -658,17 +675,20 @@ class LinkedEventsSerializer(TranslatedModelSerializer, MPTTModelSerializer):
 
         if 'id' in validated_data:
             if instance.id != validated_data['id']:
-                raise serializers.ValidationError({'id': _("You may not change the id of an existing object.")})
+                raise serializers.ValidationError(
+                    {'id': _("You may not change the id of an existing object.")})
         if 'publisher' in validated_data:
             if validated_data['publisher'] not in (instance.publisher, instance.publisher.replaced_by):
                 raise serializers.ValidationError(
-                    {'publisher': _("You may not change the publisher of an existing object.")}
-                    )
+                    {'publisher': _(
+                        "You may not change the publisher of an existing object.")}
+                )
         if 'data_source' in validated_data:
             if instance.data_source != validated_data['data_source']:
                 raise serializers.ValidationError(
-                    {'data_source': _("You may not change the data source of an existing object.")}
-                    )
+                    {'data_source': _(
+                        "You may not change the data source of an existing object.")}
+                )
         super().update(instance, validated_data)
         return instance
 
@@ -697,8 +717,7 @@ def _text_qset_by_translated_field(field, val):
     languages = utils.get_fixed_lang_codes()
     qset = Q()
     for lang in languages:
-        kwarg = {field + '_' + lang + '__icontains': val}
-        qset |= Q(**kwarg)
+        qset |= Q(**{"%s_%s__icontains" % (field, lang): val})
     return qset
 
 
@@ -730,15 +749,56 @@ class JSONAPIViewMixin(object):
         return context
 
 
-class KeywordSerializer(LinkedEventsSerializer):
-    view_name = 'keyword-detail'
-    alt_labels = serializers.SlugRelatedField(slug_field='name', read_only=True, many=True)
-    created_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    last_modified_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
+class KeywordFilterSerializer(TranslatedModelSerializer):
+    ontology_type = EnumChoiceField(Keyword.ONTOLOGY_TYPES, required=False)
+    id = serializers.CharField(required=False)
 
     class Meta:
         model = Keyword
-        exclude = ('n_events_changed',)
+        fields = ('id', 'name', 'ontology_type')
+
+    def to_representation(self, instance):
+        request = self.context['request']
+        parent = self.context.get('parent', None)
+        ret = super().to_representation(instance)
+        ret['@id'] = utils.build_url(request, instance.pk, parent=parent)
+        return ret
+
+
+class KeywordSerializer(LinkedEventsSerializer):
+    view_name = 'keyword-detail'
+    alt_labels = serializers.SlugRelatedField(
+        slug_field='name', read_only=True, many=True)
+    created_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    last_modified_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    parents = JSONLDRelatedField(
+        serializer=KeywordFilterSerializer, many=True, required=True, allow_empty=False,
+        view_name='keyword-detail', queryset=Keyword.objects.all())
+    children = JSONLDRelatedField(
+        serializer=KeywordFilterSerializer, many=True, required=True, allow_empty=False,
+        view_name='keyword-detail', queryset=Keyword.objects.all())
+    ontology_type = EnumChoiceField(Keyword.ONTOLOGY_TYPES, required=False)
+
+    class Meta:
+        model = Keyword
+        exclude = ('n_events_changed', )
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+
+        def _cp(val):
+            c_or_p = []
+            for value in getattr(instance, val).all():
+                data = KeywordFilterSerializer(
+                    context={'request': self.request, 'parent': instance}).to_representation(value)
+                c_or_p.append(data)
+            return c_or_p
+
+        ret['children'] = _cp('children')
+        ret['parents'] = _cp('parents')
+        return ret
 
 
 class KeywordRetrieveViewSet(JSONAPIViewMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -754,18 +814,17 @@ class KeywordRetrieveViewSet(JSONAPIViewMixin, mixins.RetrieveModelMixin, viewse
         if keyword.replaced_by:
             keyword = keyword.get_replacement()
             return HttpResponsePermanentRedirect(reverse('keyword-detail',
-                                                         kwargs={'pk': keyword.pk},
+                                                         kwargs={
+                                                             'pk': keyword.pk},
                                                          request=request))
         return super().retrieve(request, *args, **kwargs)
 
 
 class KeywordListViewSet(JSONAPIViewMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = Keyword.objects.all()
-    queryset = queryset.select_related('publisher').prefetch_related('alt_labels__name')
+    queryset = queryset.select_related(
+        'publisher').prefetch_related('alt_labels__name')
     serializer_class = KeywordSerializer
-    filter_backends = (filters.OrderingFilter,)
-    ordering_fields = ('n_events', 'id', 'name', 'data_source')
-    ordering = ('-data_source', '-n_events', 'name')
 
     def get_queryset(self):
         """
@@ -774,15 +833,18 @@ class KeywordListViewSet(JSONAPIViewMixin, mixins.ListModelMixin, viewsets.Gener
         If the request has no filter parameters, we only return keywords that meet the following criteria:
         -the keyword has events
         -the keyword is not deprecated
+        -the keyword is not hidden
 
         Supported keyword filtering parameters:
         data_source (only keywords with the given data sources are included)
         filter (only keywords containing the specified string are included)
         show_all_keywords (keywords without events are included)
         show_deprecated (deprecated keywords are included)
+        locale (automatically used depending on the chosen language in frontend)
         """
-        queryset = Keyword.objects.all()
+        queryset = Keyword.objects.exclude(is_hidden=True)
         data_source = self.request.query_params.get('data_source')
+        locale = self.request.query_params.get('locale', 'fi')
         # Filter by data source, multiple sources separated by comma
         if data_source:
             data_source = data_source.lower().split(',')
@@ -794,11 +856,44 @@ class KeywordListViewSet(JSONAPIViewMixin, mixins.ListModelMixin, viewsets.Gener
 
         # Optionally filter keywords by filter parameter,
         # can be used e.g. with typeahead.js
-        val = self.request.query_params.get('text') or self.request.query_params.get('filter')
+        val = self.request.query_params.get(
+            'text') or self.request.query_params.get('filter')
+
         if val:
-            # Also consider alternative labels to broaden the search!
-            qset = _text_qset_by_translated_field('name', val) | Q(alt_labels__name__icontains=val)
-            queryset = queryset.filter(qset).distinct()
+            ''' 
+            If search results do not return keywords, 
+            we expand the search results with alt labels. 
+            '''
+            qset = Q(**{"name_%s__icontains" % locale: val})
+            if not (queryset.filter(qset).distinct()).exists():
+                qset = qset | Q(alt_labels__name__icontains=val)
+                queryset = queryset.filter(qset).distinct()
+            else:
+                queryset = queryset.filter(qset).distinct()
+
+        def _get_preserved_order(ids):
+            """
+            Returns a Case expression that can be used in the order_by method,
+            ordering will be equal to the order of ids in the ids list.
+            """
+            if ids:
+                return Case(*[When(id=idx, then=pos) for pos, idx in enumerate(ids)])
+            else:
+                return Case()
+
+        ''' 
+        String diffing algorithm (using difflib) for better search results;
+        Difflib uses a modified ratcliff/obershelp algorithm.
+        '''
+        ratio_list, ordered_ratio_list = [], []
+        for termi in queryset:
+            tempi = difflib.SequenceMatcher(None, val, getattr(termi, "name_%s" % locale))
+            ratio_list.append((termi.id, tempi.ratio()))
+
+        ratio_list.sort(key=lambda x: x[1], reverse=True)
+        ordered_ratio_list = [x[0] for x in ratio_list]
+        queryset = queryset.order_by(_get_preserved_order(ordered_ratio_list))
+
         return queryset
 
 
@@ -812,8 +907,17 @@ class KeywordSetSerializer(LinkedEventsSerializer):
         serializer=KeywordSerializer, many=True, required=True, allow_empty=False,
         view_name='keyword-detail', queryset=Keyword.objects.all())
     usage = EnumChoiceField(KeywordSet.USAGES)
-    created_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    last_modified_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
+    created_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    last_modified_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+
+
+    def to_representation(self, obj):
+        data = super(KeywordSetSerializer, self).to_representation(obj)
+        non_hidden_keywords = [keyword for keyword in data.get('keywords') if not keyword.get('is_hidden')]
+        data['keywords'] = non_hidden_keywords
+        return data
 
     class Meta:
         model = KeywordSet
@@ -823,6 +927,9 @@ class KeywordSetSerializer(LinkedEventsSerializer):
 class KeywordSetViewSet(JSONAPIViewMixin, viewsets.ReadOnlyModelViewSet):
     queryset = KeywordSet.objects.all()
     serializer_class = KeywordSetSerializer
+    filter_backends = (filters.OrderingFilter,)
+    ordering_fields = ('name')
+    ordering = ('name')
 
 
 register_view(KeywordSetViewSet, 'keyword_set')
@@ -830,7 +937,8 @@ register_view(KeywordSetViewSet, 'keyword_set')
 
 class DivisionSerializer(TranslatedModelSerializer):
     type = serializers.SlugRelatedField(slug_field='type', read_only=True)
-    municipality = serializers.SlugRelatedField(slug_field='name', read_only=True)
+    municipality = serializers.SlugRelatedField(
+        slug_field='name', read_only=True)
 
     class Meta:
         model = AdministrativeDivision
@@ -887,7 +995,8 @@ def filter_division(queryset, name, value):
             names.append(item.title())
     if hasattr(queryset, 'distinct'):
         # do the join with Q objects (not querysets) in case the queryset has extra fields that would crash qs join
-        query = Q(**{name + '__ocd_id__in': ocd_ids}) | Q(**{name + '__name__in': names})
+        query = Q(**{name + '__ocd_id__in': ocd_ids}
+                  ) | Q(**{name + '__name__in': names})
         return (queryset.filter(query)).distinct()
     else:
         # Haystack SearchQuerySet does not support distinct, so we only support one type of search at a time:
@@ -900,8 +1009,10 @@ def filter_division(queryset, name, value):
 class PlaceSerializer(LinkedEventsSerializer, GeoModelSerializer):
     view_name = 'place-detail'
     divisions = DivisionSerializer(many=True, read_only=True)
-    created_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    last_modified_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
+    created_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    last_modified_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
 
     class Meta:
         model = Place
@@ -937,7 +1048,8 @@ class PlaceRetrieveViewSet(JSONAPIViewMixin, GeoModelAPIView,
             if place.replaced_by:
                 place = place.get_replacement()
                 return HttpResponsePermanentRedirect(reverse('place-detail',
-                                                             kwargs={'pk': place.pk},
+                                                             kwargs={
+                                                                 'pk': place.pk},
                                                              request=request))
         return super().retrieve(request, *args, **kwargs)
 
@@ -948,10 +1060,13 @@ class PlaceListViewSet(JSONAPIViewMixin, GeoModelAPIView,
     queryset = Place.objects.all()
     queryset = queryset.select_related('publisher')
     serializer_class = PlaceSerializer
-    filter_backends = (django_filters.rest_framework.DjangoFilterBackend, filters.OrderingFilter)
+    filter_backends = (
+        django_filters.rest_framework.DjangoFilterBackend, filters.OrderingFilter)
     filterset_class = PlaceFilter
-    ordering_fields = ('n_events', 'id', 'name', 'data_source', 'street_address', 'postal_code')
-    ordering = ('-n_events', '-data_source', 'name')  # we want to display tprek before osoite etc.
+    ordering_fields = ('n_events', 'id', 'name', 'data_source',
+                       'street_address', 'postal_code')
+    # we want to display tprek before osoite etc.
+    ordering = ('-n_events', '-data_source', 'name')
 
     def get_queryset(self):
         """
@@ -967,7 +1082,8 @@ class PlaceListViewSet(JSONAPIViewMixin, GeoModelAPIView,
         show_all_places (places without events are included)
         show_deleted (deleted places are included)
         """
-        queryset = Place.objects.prefetch_related('divisions__type', 'divisions__municipality')
+        queryset = Place.objects.prefetch_related(
+            'divisions__type', 'divisions__municipality')
         data_source = self.request.query_params.get('data_source')
         # Filter by data source, multiple sources separated by comma
         if data_source:
@@ -981,9 +1097,11 @@ class PlaceListViewSet(JSONAPIViewMixin, GeoModelAPIView,
         # Optionally filter places by filter parameter,
         # can be used e.g. with typeahead.js
         # match to street as well as name, to make it easier to find units by address
-        val = self.request.query_params.get('text') or self.request.query_params.get('filter')
+        val = self.request.query_params.get(
+            'text') or self.request.query_params.get('filter')
         if val:
-            qset = _text_qset_by_translated_field('name', val) | _text_qset_by_translated_field('street_address', val)
+            qset = _text_qset_by_translated_field(
+                'name', val) | _text_qset_by_translated_field('street_address', val)
             queryset = queryset.filter(qset)
         return queryset
 
@@ -1012,6 +1130,9 @@ class LanguageSerializer(LinkedEventsSerializer):
 class LanguageViewSet(JSONAPIViewMixin, viewsets.ReadOnlyModelViewSet):
     queryset = Language.objects.all()
     serializer_class = LanguageSerializer
+    filter_backends = (filters.OrderingFilter,)
+    ordering_fields = ('name')
+    ordering = ('name')
 
 
 register_view(LanguageViewSet, 'language')
@@ -1043,8 +1164,10 @@ class OrganizationSerializer(LinkedEventsSerializer):
     )
     is_affiliated = serializers.SerializerMethodField()
     has_regular_users = serializers.SerializerMethodField()
-    created_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    last_modified_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
+    created_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    last_modified_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
 
     class Meta:
         model = Organization
@@ -1098,7 +1221,32 @@ class EventLinkSerializer(serializers.ModelSerializer):
         exclude = ['id', 'event']
 
 
+class PaymentMethodSerializer(LinkedEventsSerializer):
+    view_name = 'paymentmethod-detail'
+    id = serializers.CharField(required=False)
+    name = serializers.CharField(required=False)
+
+    class Meta:
+        model = PaymentMethod
+        fields = '__all__'
+
+
+class PaymentViewSet(JSONAPIViewMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = PaymentMethod.objects.all()
+    serializer_class = PaymentMethodSerializer
+    filter_backends = (filters.OrderingFilter,)
+    ordering_fields = ('name')
+    ordering = ('name')
+
+
+register_view(PaymentViewSet, 'paymentmethod')
+
+
 class OfferSerializer(TranslatedModelSerializer):
+    payment_methods = JSONLDRelatedField(
+        serializer=PaymentMethodSerializer, many=True, required=False, allow_empty=True, expanded=True,
+        view_name='paymentmethod-detail', queryset=PaymentMethod.objects.all())
+
     class Meta:
         model = Offer
         exclude = ['id', 'event']
@@ -1106,11 +1254,16 @@ class OfferSerializer(TranslatedModelSerializer):
 
 class ImageSerializer(LinkedEventsSerializer):
     view_name = 'image-detail'
-    license = serializers.PrimaryKeyRelatedField(queryset=License.objects.all(), required=False)
-    created_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    last_modified_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    created_by = serializers.StringRelatedField(required=False, allow_null=True)
-    last_modified_by = serializers.StringRelatedField(required=False, allow_null=True)
+    license = serializers.PrimaryKeyRelatedField(
+        queryset=License.objects.all(), required=False)
+    created_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    last_modified_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    created_by = serializers.StringRelatedField(
+        required=False, allow_null=True)
+    last_modified_by = serializers.StringRelatedField(
+        required=False, allow_null=True)
 
     class Meta:
         model = Image
@@ -1123,7 +1276,7 @@ class ImageSerializer(LinkedEventsSerializer):
             representation['url'] = representation['image']
         representation.pop('image')
         return representation
-    
+
     def validate(self, data):
         # name the image after the file, if name was not provided
         if 'name' not in data or not data['name']:
@@ -1133,20 +1286,21 @@ class ImageSerializer(LinkedEventsSerializer):
                 data['name']['fi'] = str(data['image']).rsplit('/', 1)[-1]
         super().validate(data)
         return data
-    
+
     def to_internal_value(self, data):
-        if 'image' in data and isinstance(data['image'],str) and ';base64,' in data['image']:
+        if 'image' in data and isinstance(data['image'], str) and ';base64,' in data['image']:
             if 'file_name' in data:
                 img_name = data['file_name'] + '.'
             else:
                 img_name = 'image' + '.'
-            
+
             formatt, imgstr = data['image'].split(';base64,')
             ext = formatt.split('/')[-1]
-            data['image'] = ContentFile(base64.b64decode(imgstr), name=img_name + ext)
+            data['image'] = ContentFile(
+                base64.b64decode(imgstr), name=img_name + ext)
         data = super().to_internal_value(data)
         return data
-    
+
 
 class ImageViewSet(JSONAPIViewMixin, viewsets.ModelViewSet):
     queryset = Image.objects.all()
@@ -1178,11 +1332,16 @@ class ImageViewSet(JSONAPIViewMixin, viewsets.ModelViewSet):
                 queryset = queryset.filter(created_by=self.request.user)
             else:
                 queryset = queryset.none()
+
+        queryset = _filter_image_queryset(queryset, self.request.query_params,
+                                          srs=self.srs)
+
         return queryset
 
     def perform_destroy(self, instance):
         # ensure image can only be deleted within the organization
-        data_source, organization = get_authenticated_data_source_and_publisher(self.request)
+        data_source, organization = get_authenticated_data_source_and_publisher(
+            self.request)
         if not organization == instance.publisher:
             raise PermissionDenied()
         super().perform_destroy(instance)
@@ -1214,6 +1373,7 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
     super_event = JSONLDRelatedField(serializer='EventSerializer', required=False, view_name='event-detail',
                                      queryset=Event.objects.all(), allow_null=True)
     event_status = EnumChoiceField(Event.STATUSES, required=False)
+    type_id = EnumChoiceField(Event.TYPE_IDS, required=False)
     publication_status = EnumChoiceField(PUBLICATION_STATUSES, required=False)
     external_links = EventLinkSerializer(many=True, required=False)
     offers = OfferSerializer(many=True, required=False)
@@ -1233,17 +1393,26 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
                                   many=True, required=False, queryset=Keyword.objects.filter(deprecated=False))
 
     view_name = 'event-detail'
-    fields_needed_to_publish = ('keywords', 'location', 'start_time', 'short_description')
-    created_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    last_modified_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    date_published = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    start_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    end_time = DateTimeField(default_timezone=pytz.UTC, required=False, allow_null=True)
-    created_by = serializers.StringRelatedField(required=False, allow_null=True)
-    last_modified_by = serializers.StringRelatedField(required=False, allow_null=True)
-    is_virtualevent = serializers.BooleanField(required=False, allow_null=False)
+    fields_needed_to_publish = (
+        'keywords', 'location', 'start_time', 'short_description')
+    created_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    last_modified_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    date_published = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    start_time = DateTimeField(
+        default_timezone=pytz.UTC, required=False, allow_null=True)
+    end_time = DateTimeField(default_timezone=pytz.UTC,
+                             required=False, allow_null=True)
+    created_by = serializers.StringRelatedField(
+        required=False, allow_null=True)
+    last_modified_by = serializers.StringRelatedField(
+        required=False, allow_null=True)
+    is_virtualevent = serializers.BooleanField(
+        required=False, allow_null=False)
     is_owner = serializers.SerializerMethodField()
-    
+
     def get_is_owner(self, obj):
         request = self.context['request']
         return obj.created_by == request.user
@@ -1256,7 +1425,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
 
         if self.context:
             for ext in self.context.get('extensions', ()):
-                self.fields['extension_{}'.format(ext.identifier)] = ext.get_extension_serializer()
+                self.fields['extension_{}'.format(
+                    ext.identifier)] = ext.get_extension_serializer()
 
     def parse_datetimes(self, data):
         # here, we also set has_start_time and has_end_time accordingly
@@ -1264,7 +1434,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
             val = data.get(field, None)
             if val:
                 if isinstance(val, str):
-                    data[field], data['has_' + field] = utils.parse_time(val, not field == 'end_time')
+                    data[field], data['has_' +
+                                      field] = utils.parse_time(val, not field == 'end_time')
         return data
 
     def to_internal_value(self, data):
@@ -1290,22 +1461,26 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
 
         if (data['is_virtualevent'] == True):
             if 'location' in self.fields_needed_to_publish:
-                self.fields_needed_to_publish = list(self.fields_needed_to_publish)
+                self.fields_needed_to_publish = list(
+                    self.fields_needed_to_publish)
                 self.fields_needed_to_publish.remove('location')
-                self.fields_needed_to_publish.append('virtualevent_url')
-                self.fields_needed_to_publish = tuple(self.fields_needed_to_publish)
+                self.fields_needed_to_publish = tuple(
+                    self.fields_needed_to_publish)
 
         if 'super_event_type' in data:
             if data['super_event_type'] == 'recurring':
-                self.fields_needed_to_publish = list (self.fields_needed_to_publish)
+                self.fields_needed_to_publish = list(
+                    self.fields_needed_to_publish)
                 self.fields_needed_to_publish.remove('start_time')
-                self.fields_needed_to_publish = tuple(self.fields_needed_to_publish)
-            
+                self.fields_needed_to_publish = tuple(
+                    self.fields_needed_to_publish)
+
         # check that published events have a location, keyword and start_time
         languages = utils.get_fixed_lang_codes()
 
         errors = {}
-        lang_error_msg = _('This field must be specified before an event is published.')
+        lang_error_msg = _(
+            'This field must be specified before an event is published.')
         for field in self.fields_needed_to_publish:
             if field in self.translated_fields:
                 for lang in languages:
@@ -1329,7 +1504,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
             data['offers'][index] = clean_text_fields(offer)
 
         if not offer_exists:
-            errors['offers'] = _('Price info must be specified before an event is published.')
+            errors['offers'] = _(
+                'Price info must be specified before an event is published.')
 
         # clean link description text
         for index, link in enumerate(data.get('external_links', [])):
@@ -1354,7 +1530,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
                 data['end_time'] += timedelta(days=1)
 
         if data.get('end_time') and data['end_time'] < timezone.now():
-            errors['end_time'] = force_text(_('End time cannot be in the past. Please set a future end time.'))
+            errors['end_time'] = force_text(
+                _('End time cannot be in the past. Please set a future end time.'))
 
         if errors:
             raise serializers.ValidationError(errors)
@@ -1377,7 +1554,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
 
         if 'location' not in validated_data:
             try:
-                validated_data['location'] = Place.objects.get(id='virtual:public')
+                validated_data['location'] = Place.objects.get(
+                    id='virtual:public')
             except (Place.DoesNotExist, Place.MultipleObjectsReturned):
                 print(f'Attempted to create event with default location')
 
@@ -1388,7 +1566,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         validated_data.update({'created_by': self.user,
                                'last_modified_by': self.user,
                                'created_time': Event.now(),  # we must specify creation time as we are setting id
-                               'event_status': Event.Status.SCHEDULED,  # mark all newly created events as scheduled
+                               # mark all newly created events as scheduled
+                               'event_status': Event.Status.SCHEDULED,
                                })
 
         # pop out extension related fields because create() cannot stand them
@@ -1399,9 +1578,11 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
 
         event = super().create(validated_data)
 
-        # create and add related objects
         for offer in offers:
-            Offer.objects.create(event=event, **offer)
+            payment_methods = offer.pop('payment_methods', [])
+            offer_instance = Offer.objects.create(event=event, **offer)
+            for payment_method in payment_methods:
+                offer_instance.payment_methods.add(payment_method)
         for link in links:
             EventLink.objects.create(event=event, **link)
         for video in videos:
@@ -1411,7 +1592,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         extensions = get_extensions_from_request(request)
 
         for ext in extensions:
-            ext.post_create_event(request=request, event=event, data=original_validated_data)
+            ext.post_create_event(
+                request=request, event=event, data=original_validated_data)
 
         post_save(event)
 
@@ -1470,7 +1652,10 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         if isinstance(offers, list):
             instance.offers.all().delete()
             for offer in offers:
-                Offer.objects.create(event=instance, **offer)
+                payment_methods = offer.pop('payment_methods', [])
+                offer_instance = Offer.objects.create(event=instance, **offer)
+                for payment_method in payment_methods:
+                    offer_instance.payment_methods.add(payment_method)
 
         # update ext links
         if isinstance(links, list):
@@ -1488,7 +1673,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         extensions = get_extensions_from_request(request)
 
         for ext in extensions:
-            ext.post_update_event(request=request, event=instance, data=original_validated_data)
+            ext.post_update_event(
+                request=request, event=instance, data=original_validated_data)
 
         post_update(instance)
 
@@ -1498,7 +1684,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
         ret = super(EventSerializer, self).to_representation(obj)
 
         if obj.deleted:
-            keys_to_preserve = ['id', 'name', 'last_modified_time', 'deleted', 'replaced_by']
+            keys_to_preserve = ['id', 'name',
+                                'last_modified_time', 'deleted', 'replaced_by']
             for key in ret.keys() - keys_to_preserve:
                 del ret[key]
             ret['name'] = utils.get_deleted_object_name()
@@ -1511,11 +1698,13 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
 
         if obj.start_time and not obj.has_start_time:
             # Return only the date part
-            ret['start_time'] = obj.start_time.astimezone(LOCAL_TZ).strftime('%Y-%m-%d')
+            ret['start_time'] = obj.start_time.astimezone(
+                LOCAL_TZ).strftime('%Y-%m-%d')
         if obj.end_time and not obj.has_end_time:
             # If we're storing only the date part, do not pretend we have the exact time.
             # Timestamp is of the form %Y-%m-%dT00:00:00, so we report the previous date.
-            ret['end_time'] = (obj.end_time - timedelta(days=1)).astimezone(LOCAL_TZ).strftime('%Y-%m-%d')
+            ret['end_time'] = (obj.end_time - timedelta(days=1)
+                               ).astimezone(LOCAL_TZ).strftime('%Y-%m-%d')
             # Unless the event is short, then no need for end time
             if obj.start_time and obj.end_time - obj.start_time <= timedelta(days=1):
                 ret['end_time'] = None
@@ -1541,7 +1730,8 @@ class EventSerializer(BulkSerializerMixin, LinkedEventsSerializer, GeoModelAPIVi
             sub_events_relation = self.fields['sub_events'].child_relation
             undeleted_sub_events = []
             for sub_event in obj.sub_events.filter(deleted=False):
-                undeleted_sub_events.append(sub_events_relation.to_representation(sub_event))
+                undeleted_sub_events.append(
+                    sub_events_relation.to_representation(sub_event))
             ret['sub_events'] = undeleted_sub_events
 
         return ret
@@ -1565,7 +1755,8 @@ def _format_images_v0_1(data):
 
 class EventSerializerV0_1(EventSerializer):
     def __init__(self, *args, **kwargs):
-        kwargs.setdefault('context', {}).setdefault('include', []).append('image')
+        kwargs.setdefault('context', {}).setdefault(
+            'include', []).append('image')
         super(EventSerializerV0_1, self).__init__(*args, **kwargs)
 
     def to_representation(self, obj):
@@ -1580,12 +1771,14 @@ class LinkedEventsOrderingFilter(filters.OrderingFilter):
 
 class EventOrderingFilter(LinkedEventsOrderingFilter):
     def filter_queryset(self, request, queryset, view):
-        queryset = super(EventOrderingFilter, self).filter_queryset(request, queryset, view)
+        queryset = super(EventOrderingFilter, self).filter_queryset(
+            request, queryset, view)
         ordering = self.get_ordering(request, queryset, view)
         if not ordering:
             ordering = []
         if 'duration' in ordering:
-            queryset = queryset.extra(select={'duration': 'end_time - start_time'})
+            queryset = queryset.extra(
+                select={'duration': 'end_time - start_time'})
         return queryset
 
 
@@ -1598,7 +1791,8 @@ def parse_duration_string(duration):
     """
     m = re.match(r'(\d+)\s*(d|h|m|s)?$', duration.strip().lower())
     if not m:
-        raise ParseError("Invalid duration supplied. Try '1d', '2h' or '180m'.")
+        raise ParseError(
+            "Invalid duration supplied. Try '1d', '2h' or '180m'.")
     val, unit = m.groups()
     if not unit:
         unit = 's'
@@ -1613,6 +1807,25 @@ def parse_duration_string(duration):
         mul = 24 * 3600
 
     return int(val) * mul
+
+
+def _filter_image_queryset(queryset, params, srs=None):
+    image_text = params.get('image_text', '')
+
+    if image_text:
+        fields = ImageTranslationOptions.fields
+        qset = Q()
+        for field in fields:
+            # Multilanguage field filtering for image_text
+            qset |= _text_qset_by_translated_field(field, image_text)
+
+        # We chain two querysets, the translated field ones, and make it
+        # work as the photographer name. (We wanted diff params but this is
+        # what was asked for).
+        queryset = queryset.filter(
+            qset | Q(photographer_name__icontains=image_text))
+
+    return queryset
 
 
 def _filter_event_queryset(queryset, params, srs=None):
@@ -1654,7 +1867,8 @@ def _filter_event_queryset(queryset, params, srs=None):
             raise serializers.ValidationError(_('Days must be 1 or more.'))
 
         if start or end:
-            raise serializers.ValidationError(_('Start or end cannot be used with days.'))
+            raise serializers.ValidationError(
+                _('Start or end cannot be used with days.'))
 
         today = datetime.now(timezone.utc).date()
 
@@ -1710,11 +1924,13 @@ def _filter_event_queryset(queryset, params, srs=None):
         val = val.split(',')
         try:
             # replaced keywords are looked up for backwards compatibility
-            val = [getattr(Keyword.objects.get(id=kid).replaced_by, 'id', None) or kid for kid in val]
+            val = [getattr(Keyword.objects.get(id=kid).replaced_by,
+                           'id', None) or kid for kid in val]
         except Keyword.DoesNotExist:
             # the user asked for an unknown keyword
             queryset = queryset.none()
-        queryset = queryset.filter(Q(keywords__pk__in=val) | Q(audience__pk__in=val)).distinct()
+        queryset = queryset.filter(
+            Q(keywords__pk__in=val) | Q(audience__pk__in=val)).distinct()
 
     # 'keyword_OR' behaves the same way as 'keyword'
     val = params.get('keyword_OR', None)
@@ -1722,11 +1938,13 @@ def _filter_event_queryset(queryset, params, srs=None):
         val = val.split(',')
         try:
             # replaced keywords are looked up for backwards compatibility
-            val = [getattr(Keyword.objects.get(id=kid).replaced_by, 'id', None) or kid for kid in val]
+            val = [getattr(Keyword.objects.get(id=kid).replaced_by,
+                           'id', None) or kid for kid in val]
         except Keyword.DoesNotExist:
             # the user asked for an unknown keyword
             queryset = queryset.none()
-        queryset = queryset.filter(Q(keywords__pk__in=val) | Q(audience__pk__in=val)).distinct()
+        queryset = queryset.filter(
+            Q(keywords__pk__in=val) | Q(audience__pk__in=val)).distinct()
 
     # Filter by keyword ids requiring all keywords to be present in event
     val = params.get('keyword_AND', None)
@@ -1735,11 +1953,13 @@ def _filter_event_queryset(queryset, params, srs=None):
         for keyword_id in val:
             try:
                 # replaced keywords are looked up for backwards compatibility
-                val = getattr(Keyword.objects.get(id=keyword_id).replaced_by, 'id', None) or keyword_id
+                val = getattr(Keyword.objects.get(
+                    id=keyword_id).replaced_by, 'id', None) or keyword_id
             except Keyword.DoesNotExist:
                 # the user asked for an unknown keyword
                 queryset = queryset.none()
-            queryset = queryset.filter(Q(keywords__pk=keyword_id) | Q(audience__pk=keyword_id))
+            queryset = queryset.filter(
+                Q(keywords__pk=keyword_id) | Q(audience__pk=keyword_id))
         queryset = queryset.distinct()
 
     # Negative filter for keyword ids
@@ -1748,11 +1968,13 @@ def _filter_event_queryset(queryset, params, srs=None):
         val = val.split(',')
         try:
             # replaced keywords are looked up for backwards compatibility
-            val = [getattr(Keyword.objects.get(id=kid).replaced_by, 'id', None) or kid for kid in val]
+            val = [getattr(Keyword.objects.get(id=kid).replaced_by,
+                           'id', None) or kid for kid in val]
         except Keyword.DoesNotExist:
             # the user asked for an unknown keyword
             pass
-        queryset = queryset.exclude(Q(keywords__pk__in=val) | Q(audience__pk__in=val)).distinct()
+        queryset = queryset.exclude(
+            Q(keywords__pk__in=val) | Q(audience__pk__in=val)).distinct()
 
     # filter only super or non-super events. to be deprecated?
     val = params.get('recurring', None)
@@ -1760,12 +1982,14 @@ def _filter_event_queryset(queryset, params, srs=None):
         val = val.lower()
         if val == 'super':
             # same as ?super_event_type=recurring
-            queryset = queryset.filter(super_event_type=Event.SuperEventType.RECURRING)
+            queryset = queryset.filter(
+                super_event_type=Event.SuperEventType.RECURRING)
         elif val == 'sub':
             # same as ?super_event_type=none,umbrella, weirdly yielding non-sub events too.
             # don't know if users want this to remain tho. do we want that or is there a need
             # to change this to actually filter only subevents of recurring events?
-            queryset = queryset.exclude(super_event_type=Event.SuperEventType.RECURRING)
+            queryset = queryset.exclude(
+                super_event_type=Event.SuperEventType.RECURRING)
 
     val = params.get('max_duration', None)
     if val:
@@ -1819,6 +2043,22 @@ def _filter_event_queryset(queryset, params, srs=None):
     elif val and val.lower() == 'eventpostponed':
         queryset = queryset.filter(event_status=Event.Status.POSTPONED)
 
+    # Filter by event type
+    val = params.get('type_id', None)
+    if val:
+        val = val.split(',')
+        q = Q()
+        for type_id_val in val:
+            if type_id_val.lower() == 'eventgeneral':
+                q = q | Q(type_id=Event.Type_Id.GENERAL)
+            elif type_id_val.lower() == 'eventcourse':
+                q = q | Q(type_id=Event.Type_Id.COURSE)
+            elif type_id_val.lower() == 'eventvolunteering':
+                q = q | Q(type_id=Event.Type_Id.VOLUNTEERING)
+            elif type_id_val.lower() == 'eventhobbies':
+                q = q | Q(type_id=Event.Type_Id.HOBBIES)
+        queryset = queryset.filter(q)
+
     # Filter by language, checking both string content and in_language field
     val = params.get('language', None)
     if val:
@@ -1829,8 +2069,10 @@ def _filter_event_queryset(queryset, params, srs=None):
                 # check string content if language has translations available
                 name_arg = {'name_' + lang + '__isnull': False}
                 desc_arg = {'description_' + lang + '__isnull': False}
-                short_desc_arg = {'short_description_' + lang + '__isnull': False}
-                q = q | Q(in_language__id=lang) | Q(**name_arg) | Q(**desc_arg) | Q(**short_desc_arg)
+                short_desc_arg = {
+                    'short_description_' + lang + '__isnull': False}
+                q = q | Q(in_language__id=lang) | Q(
+                    **name_arg) | Q(**desc_arg) | Q(**short_desc_arg)
             else:
                 q = q | Q(in_language__id=lang)
         queryset = queryset.filter(q)
@@ -1854,7 +2096,8 @@ def _filter_event_queryset(queryset, params, srs=None):
                 # check string content if language has translations available
                 name_arg = {'name_' + lang + '__isnull': False}
                 desc_arg = {'description_' + lang + '__isnull': False}
-                short_desc_arg = {'short_description_' + lang + '__isnull': False}
+                short_desc_arg = {
+                    'short_description_' + lang + '__isnull': False}
                 q = q | Q(**name_arg) | Q(**desc_arg) | Q(**short_desc_arg)
             else:
                 # language has no translations, matching condition must be false
@@ -1960,7 +2203,8 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
     filter_backends = (EventOrderingFilter, django_filters.rest_framework.DjangoFilterBackend,
                        EventExtensionFilterBackend)
     filterset_class = EventFilter
-    ordering_fields = ('start_time', 'end_time', 'duration', 'last_modified_time', 'name')
+    ordering_fields = ('start_time', 'end_time', 'duration',
+                       'last_modified_time', 'name')
     ordering = ('-last_modified_time',)
     renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES + [DOCXRenderer]
 
@@ -1971,7 +2215,8 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        self.data_source, self.organization = get_authenticated_data_source_and_publisher(request)
+        self.data_source, self.organization = get_authenticated_data_source_and_publisher(
+            request)
 
     @staticmethod
     def get_serializer_class_for_version(version):
@@ -2018,7 +2263,8 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         if (
             event.publication_status == PublicationStatus.PUBLIC or
             self.request.user.is_authenticated and
-            self.request.user.can_edit_event(event.publisher, event.publication_status)
+            self.request.user.can_edit_event(
+                event.publisher, event.publication_status)
         ):
             if event.deleted:
                 raise EventDeletedException()
@@ -2034,10 +2280,12 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
 
         if self.request.method in SAFE_METHODS:
             # we cannot use distinct for performance reasons
-            public_queryset = original_queryset.filter(publication_status=PublicationStatus.PUBLIC)
+            public_queryset = original_queryset.filter(
+                publication_status=PublicationStatus.PUBLIC)
             editable_queryset = original_queryset.none()
             if self.request.user.is_authenticated:
-                editable_queryset = self.request.user.get_editable_events(original_queryset)
+                editable_queryset = self.request.user.get_editable_events(
+                    original_queryset)
             # by default, only public events are shown in the event list
             queryset = public_queryset
             # however, certain query parameters allow customizing the listing for authenticated users
@@ -2073,7 +2321,8 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         if original_event.replaced_by is not None:
             replacing_event = original_event.replaced_by
             context = self.get_serializer_context()
-            response.data = EventSerializer(replacing_event, context=context).data
+            response.data = EventSerializer(
+                replacing_event, context=context).data
         return response
 
     def perform_update(self, serializer):
@@ -2141,7 +2390,8 @@ class EventViewSet(JSONAPIViewMixin, BulkModelViewSet, viewsets.ReadOnlyModelVie
         if event.replaced_by:
             event = event.get_replacement()
             return HttpResponsePermanentRedirect(reverse('event-detail',
-                                                         kwargs={'pk': event.pk},
+                                                         kwargs={
+                                                             'pk': event.pk},
                                                          request=request))
         return super().retrieve(request, *args, **kwargs)
 
@@ -2189,7 +2439,8 @@ class SearchSerializer(serializers.Serializer):
 
 class SearchSerializerV0_1(SearchSerializer):
     def to_representation(self, search_result):
-        ret = super(SearchSerializerV0_1, self).to_representation(search_result)
+        ret = super(SearchSerializerV0_1,
+                    self).to_representation(search_result)
         if 'resource_type' in ret:
             ret['object_type'] = ret['resource_type']
             del ret['resource_type']
@@ -2219,7 +2470,8 @@ class SearchViewSet(JSONAPIViewMixin, GeoModelAPIView, viewsets.ViewSetMixin, ge
         input_val = params.get('input', '').strip()
         q_val = params.get('q', '').strip()
         if not input_val and not q_val:
-            raise ParseError("Supply search terms with 'q=' or autocomplete entry with 'input='")
+            raise ParseError(
+                "Supply search terms with 'q=' or autocomplete entry with 'input='")
         if input_val and q_val:
             raise ParseError("Supply either 'q' or 'input', not both")
 
@@ -2249,17 +2501,20 @@ class SearchViewSet(JSONAPIViewMixin, GeoModelAPIView, viewsets.ViewSetMixin, ge
         if len(models) == 1 and Event in models:
             division = params.get('division', None)
             if division:
-                queryset = filter_division(queryset, 'location__divisions', division)
+                queryset = filter_division(
+                    queryset, 'location__divisions', division)
 
             start = params.get('start', None)
             if start:
                 dt = utils.parse_time(start, is_start=True)[0]
-                queryset = queryset.filter(Q(end_time__gt=dt) | Q(start_time__gte=dt))
+                queryset = queryset.filter(
+                    Q(end_time__gt=dt) | Q(start_time__gte=dt))
 
             end = params.get('end', None)
             if end:
                 dt = utils.parse_time(end, is_start=False)[0]
-                queryset = queryset.filter(Q(end_time__lt=dt) | Q(start_time__lte=dt))
+                queryset = queryset.filter(
+                    Q(end_time__lt=dt) | Q(start_time__lte=dt))
 
             if not start and not end and hasattr(queryset.query, 'add_decay_function'):
                 # If no time-based filters are set, make the relevancy score
