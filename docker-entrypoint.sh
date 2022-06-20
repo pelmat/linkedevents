@@ -9,15 +9,15 @@ function _log(){
 if [ -n "$DATABASE_HOST" ]; then
   until nc -z -v -w30 "$DATABASE_HOST" 5432
   do
-    echo "Waiting for postgres database connection..."
+    _log "Waiting for postgres database connection..."
     sleep 1
   done
-  echo "Database is up!"
+  _log "Database is up!"
 fi
 
-_log "Running Linked events entrypoint..."
+_log "Running Linked Events entrypoint..."
 
-if [ "$1" = "start_linked_dev_server" ]; then
+if [ "$1" = "dev_server" ]; then
   _log "Starting dev server..."
   python ./manage.py runserver 0.0.0.0:8000
 
@@ -27,7 +27,7 @@ elif [ "$1" = "apply_migrations" ]; then
 
 elif [ "$1" = "run_tests" ]; then
   _log "Running tests..."
-  pytest
+  pytest --cov , --doctest-modules
 
 elif [ "$1" = "e" ]; then
   shift
@@ -36,8 +36,8 @@ elif [ "$1" = "e" ]; then
 
 else
   _log "Starting production server..."
-  uwsgi --http :8000 --wsgi-file deploy/wsgi.py --check-static /srv/www
+  uwsgi --ini deploy/uwsgi.ini --check-static /var/www
 
 fi
 
-_log "Linked events entrypoint completed..."
+_log "Linked Events entrypoint completed..."

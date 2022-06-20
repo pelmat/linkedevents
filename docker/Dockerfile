@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y postgresql-client less netcat-openbsd g
 RUN pip install --upgrade pip --no-cache-dir \
     && pip install -r deploy/requirements.txt --no-cache-dir
 
+RUN mkdir -p /srv/logs && chown linkedevents:linkedevents /srv/logs
+
 RUN python manage.py compilemessages
 RUN python manage.py collectstatic --no-input
 
